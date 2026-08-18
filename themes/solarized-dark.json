@@ -1,0 +1,28 @@
+{
+  "id": "solarized-dark",
+  "name": "Solarized Dark",
+  "description": "Ethan Schoonover's classic — low contrast and warm.",
+  "colorScheme": "dark",
+  "colors": {
+    "--bg": "#002b36",
+    "--surface": "#073642",
+    "--surface-2": "#0a3b49",
+    "--raised": "#11404d",
+    "--border": "#405b65",
+    "--chrome": "#00212b",
+    "--text": "#eee8d5",
+    "--muted": "#93a1a1",
+    "--faint": "#657b83",
+    "--brand": "#2aa198",
+    "--brand-dim": "#1d7f79",
+    "--accent": "#eee8d5",
+    "--accent-dim": "#839496",
+    "--premium": "#b58900",
+    "--green": "#859900",
+    "--danger": "#dc322f",
+    "--ok": "#859900",
+    "--warn": "#b58900",
+    "--shadow": "#000000"
+  },
+  "extraCss": ""
+}

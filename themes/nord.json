@@ -1,0 +1,28 @@
+{
+  "id": "nord",
+  "name": "Nord",
+  "description": "Soft arctic palette, easy on the eyes.",
+  "colorScheme": "dark",
+  "colors": {
+    "--bg": "#2e3440",
+    "--surface": "#353b47",
+    "--surface-2": "#3b4252",
+    "--raised": "#434c5e",
+    "--border": "#4c566a",
+    "--chrome": "#272c36",
+    "--text": "#eceff4",
+    "--muted": "#d8dee9",
+    "--faint": "#8a93a5",
+    "--brand": "#88c0d0",
+    "--brand-dim": "#5e81ac",
+    "--accent": "#e5e9f0",
+    "--accent-dim": "#a3adc2",
+    "--premium": "#ebcb8b",
+    "--green": "#a3be8c",
+    "--danger": "#bf616a",
+    "--ok": "#a3be8c",
+    "--warn": "#d08770",
+    "--shadow": "#000000"
+  },
+  "extraCss": "/* Slightly brighter hover on interactive elements */\nbutton:hover { filter: brightness(1.08); }"
+}

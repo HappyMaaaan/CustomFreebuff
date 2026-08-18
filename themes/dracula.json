@@ -1,0 +1,28 @@
+{
+  "id": "dracula",
+  "name": "Dracula",
+  "description": "The famous dark purple theme, high contrast.",
+  "colorScheme": "dark",
+  "colors": {
+    "--bg": "#282a36",
+    "--surface": "#2d2f3a",
+    "--surface-2": "#343746",
+    "--raised": "#44475a",
+    "--border": "#44475a",
+    "--chrome": "#21222c",
+    "--text": "#f8f8f2",
+    "--muted": "#bfc2d1",
+    "--faint": "#6f7387",
+    "--brand": "#50fa7b",
+    "--brand-dim": "#3cb85c",
+    "--accent": "#f8f8f2",
+    "--accent-dim": "#a5a8bd",
+    "--premium": "#ffb86c",
+    "--green": "#50fa7b",
+    "--danger": "#ff5555",
+    "--ok": "#50fa7b",
+    "--warn": "#f1fa8c",
+    "--shadow": "#000000"
+  },
+  "extraCss": ""
+}

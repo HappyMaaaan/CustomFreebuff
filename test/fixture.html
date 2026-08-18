@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Freebuff Desktop (fixture)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e0e0e;
+    --surface: #151517;
+    --surface-2: #1b1b1e;
+    --raised: #232327;
+    --border: #2a2a2e;
+    --chrome: #0a0a0b;
+    --text: #e7e7e8;
+    --muted: #9a9aa0;
+    --brand: #7cff3f;
+    --brand-dim: #5bbf2f;
+    --accent: #d9d9de;
+    --danger: #d56a6a;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f3f3f4;
+    --surface: #fbfbfc;
+    --text: #1d1d20;
+    --muted: #63636b;
+    --brand: #368f06;
+  }
+  body { background: var(--bg); color: var(--text); font-family: sans-serif; }
+</style>
+</head>
+<body>
+  <h1>fixture</h1>
+  <script>
+    // Imite l'API exposée par le preload de Freebuff.
+    window.__nativeThemeCalls = []
+    window.freebuffDesktop = {
+      setTheme: function (t) { window.__nativeThemeCalls.push(t) },
+    }
+  </script>
+</body>
+</html>

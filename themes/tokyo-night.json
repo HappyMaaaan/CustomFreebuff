@@ -1,0 +1,28 @@
+{
+  "id": "tokyo-night",
+  "name": "Tokyo Night",
+  "description": "Deep blues and soft neon — Tokyo at night.",
+  "colorScheme": "dark",
+  "colors": {
+    "--bg": "#1a1b26",
+    "--surface": "#1f2335",
+    "--surface-2": "#24283b",
+    "--raised": "#2f3549",
+    "--border": "#414868",
+    "--chrome": "#16161e",
+    "--text": "#c0caf5",
+    "--muted": "#9aa5ce",
+    "--faint": "#565f89",
+    "--brand": "#7aa2f7",
+    "--brand-dim": "#5d89e6",
+    "--accent": "#c0caf5",
+    "--accent-dim": "#7dcfff",
+    "--premium": "#e0af68",
+    "--green": "#9ece6a",
+    "--danger": "#f7768e",
+    "--ok": "#9ece6a",
+    "--warn": "#e0af68",
+    "--shadow": "#000000"
+  },
+  "extraCss": ""
+}
