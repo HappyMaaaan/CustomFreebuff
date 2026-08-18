@@ -11,6 +11,10 @@
  *
  * Without a tag, the next patch version after the latest GitHub release is
  * used automatically (v1.0.1, then v1.0.2, …).
+ *
+ * The release notes describe what CHANGED in this version: the CHANGELOG.md
+ * section for the tag is used (or the notes file, when given) — never the
+ * generic v1.0.0 description.
  */
 
 import { spawnSync } from 'node:child_process'
@@ -77,39 +81,14 @@ async function findRelease(token, tag) {
   return null
 }
 
-async function createRelease(token, tag) {
-  const notes = NOTES_FILE && fs.existsSync(NOTES_FILE)
-    ? fs.readFileSync(NOTES_FILE, 'utf8')
-    : [
-        `## CustomFreebuff ${TAG}`,
-        '',
-        'A small theme studio for Freebuff Desktop: pick a theme (or write your own CSS) and it is applied live to the app — display only.',
-        '',
-        '### What is in the box',
-        '',
-        '- **CustomFreebuff.exe** — standalone Windows executable. Double-click it: no Node.js, nothing to install.',
-        '',
-        '### How to use',
-        '',
-        '1. Close Freebuff if it is already open.',
-        '2. Run CustomFreebuff.exe — your browser opens the theme studio.',
-        '3. Click **Launch Freebuff with theming**, then pick a theme.',
-        '',
-        '### Notes',
-        '',
-        '- Display only: no file of the Freebuff installation is modified, nothing is bypassed, everything is reversible.',
-        '- The executable is not code-signed, so Windows SmartScreen may show a warning the first time.',
-        '',
-        'Source: https://github.com/HappyMaaaan/CustomFreebuff',
-      ].join('\n')
-
+async function createRelease(token, tag, body) {
   const { status, json } = await api(`/repos/${REPO}/releases`, {
     method: 'POST',
     token,
     body: {
       tag_name: tag,
       name: `CustomFreebuff ${tag}`,
-      body: notes,
+      body,
       draft: false,
       prerelease: false,
     },
@@ -125,6 +104,37 @@ async function deleteExistingAsset(token, release, name) {
     await api(`/repos/${REPO}/releases/assets/${existing.id}`, { method: 'DELETE', token })
     console.log(`Removed previous asset ${name} (${existing.id}).`)
   }
+}
+
+/** Extracts the CHANGELOG.md section for `tag` — its content, without the
+ *  heading. Returns null when the tag has no section yet. */
+function changelogNotes(tag) {
+  const file = path.join(ROOT, 'CHANGELOG.md')
+  if (!fs.existsSync(file)) return null
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+  let inSection = false
+  const out = []
+  for (const line of lines) {
+    const isHeading = /^##\s/.test(line)
+    if (isHeading) {
+      if (inSection) break
+      // "## v1.0.1 — 2026-08-18" / "## [v1.0.1]" → the tag token
+      const bare = line.replace(/^##\s+/, '').replace(/^\[/, '').split(/[\]\s]/)[0]
+      inSection = bare === tag
+      continue
+    }
+    if (inSection) out.push(line)
+  }
+  return out.join('\n').trim() || null
+}
+
+/** Release body: the notes file when given, else the CHANGELOG section for
+ *  the tag, else a short fallback. Never the generic v1.0.0 description. */
+function releaseBody(tag) {
+  if (NOTES_FILE && fs.existsSync(NOTES_FILE)) return fs.readFileSync(NOTES_FILE, 'utf8')
+  const notes = changelogNotes(tag)
+  if (notes) return `## CustomFreebuff ${tag}\n\n${notes}`
+  return `## CustomFreebuff ${tag}\n\nSee CHANGELOG.md for what changed in this version.`
 }
 
 async function uploadAsset(token, release) {
@@ -185,15 +195,22 @@ if (!TAG) {
   console.log(`No tag given — bumping to ${TAG} (next after ${latestTag || 'nothing yet'}).`)
 }
 
+const body = releaseBody(TAG)
 console.log(`Releasing ${TAG} -> ${REPO}`)
 await ensureTag()
 
 let release = await findRelease(token, TAG)
 if (release) {
-  console.log('Release already exists, replacing its asset.')
+  console.log('Release already exists, replacing its asset and body.')
   release.assets = release.assets || []
+  const { status } = await api(`/repos/${REPO}/releases/${release.id}`, {
+    method: 'PATCH',
+    token,
+    body: { body },
+  })
+  if (status === 200) console.log('Release body updated from the changelog.')
 } else {
-  release = await createRelease(token, TAG)
+  release = await createRelease(token, TAG, body)
   console.log('Release created.')
   release.assets = []
 }
