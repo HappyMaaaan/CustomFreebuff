@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * scripts/gh-release.mjs — Creates a GitHub release and uploads
- * dist/FreebuffThemer.exe as the download asset.
+ * dist/CustomFreebuff.exe as the download asset.
  *
  * The GitHub token comes from the GITHUB_TOKEN environment variable or from
  * Git Credential Manager (the credentials already stored on this machine).
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
-const ASSET = path.join(ROOT, 'dist', 'FreebuffThemer.exe')
+const ASSET = path.join(ROOT, 'dist', 'CustomFreebuff.exe')
 const REPO = 'HappyMaaaan/CustomFreebuff'
 const TAG = process.argv[2] || 'v1.0.0'
 const NOTES_FILE = process.argv[3] ? path.resolve(process.argv[3]) : null
@@ -77,18 +77,18 @@ async function createRelease(token, tag) {
   const notes = NOTES_FILE && fs.existsSync(NOTES_FILE)
     ? fs.readFileSync(NOTES_FILE, 'utf8')
     : [
-        `## Freebuff Themer ${TAG}`,
+        `## CustomFreebuff ${TAG}`,
         '',
         'A small theme studio for Freebuff Desktop: pick a theme (or write your own CSS) and it is applied live to the app — display only.',
         '',
         '### What is in the box',
         '',
-        '- **FreebuffThemer.exe** — standalone Windows executable. Double-click it: no Node.js, nothing to install.',
+        '- **CustomFreebuff.exe** — standalone Windows executable. Double-click it: no Node.js, nothing to install.',
         '',
         '### How to use',
         '',
         '1. Close Freebuff if it is already open.',
-        '2. Run FreebuffThemer.exe — your browser opens the theme studio.',
+        '2. Run CustomFreebuff.exe — your browser opens the theme studio.',
         '3. Click **Launch Freebuff with theming**, then pick a theme.',
         '',
         '### Notes',
@@ -104,7 +104,7 @@ async function createRelease(token, tag) {
     token,
     body: {
       tag_name: tag,
-      name: `Freebuff Themer ${tag}`,
+      name: `CustomFreebuff ${tag}`,
       body: notes,
       draft: false,
       prerelease: false,
@@ -125,9 +125,10 @@ async function deleteExistingAsset(token, release, name) {
 
 async function uploadAsset(token, release) {
   const data = fs.readFileSync(ASSET)
-  await deleteExistingAsset(token, release, 'FreebuffThemer.exe')
+  await deleteExistingAsset(token, release, 'CustomFreebuff.exe')
+  await deleteExistingAsset(token, release, 'FreebuffThemer.exe') // legacy name from earlier releases
   const uploadUrl = release.uploadUrl.replace('{?name,label}', '')
-  const target = `${uploadUrl}?name=${encodeURIComponent('FreebuffThemer.exe')}&label=${encodeURIComponent('Freebuff Themer (Windows x64)')}`
+  const target = `${uploadUrl}?name=${encodeURIComponent('CustomFreebuff.exe')}&label=${encodeURIComponent('CustomFreebuff (Windows x64)')}`
 
   // GitHub redirects to a signed upload URL. Manual redirect keeps the POST
   // method and the body (automatic redirect would turn it into a GET).
@@ -159,7 +160,7 @@ async function uploadAsset(token, release) {
 }
 
 if (!fs.existsSync(ASSET)) {
-  console.error('dist/FreebuffThemer.exe not found. Run `node scripts/build-exe.mjs` first.')
+  console.error('dist/CustomFreebuff.exe not found. Run `node scripts/build-exe.mjs` first.')
   process.exit(1)
 }
 

@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const DIST = path.join(ROOT, 'dist')
-const OUT = path.join(DIST, 'FreebuffThemer.exe')
+const OUT = path.join(DIST, 'CustomFreebuff.exe')
 const ICON = path.join(ROOT, 'build', 'icon.ico')
 const EMBEDDED = path.join(ROOT, 'lib', 'embedded-assets.mjs')
 
@@ -88,7 +88,7 @@ if (result.status !== 0) {
 }
 
 const sizeKb = (fs.statSync(OUT).size / 1024).toFixed(0)
-console.log(`\nDone. dist/FreebuffThemer.exe (${sizeKb} kB) — double-click it, no Node needed.`)
+console.log(`\nDone. dist/CustomFreebuff.exe (${sizeKb} kB) — double-click it, no Node needed.`)
 
 cleanup()
 

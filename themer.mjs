@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Freebuff Themer — theme studio for Freebuff Desktop.
+ * CustomFreebuff — theme studio for Freebuff Desktop.
  *
  * A small local server (127.0.0.1) that:
  *   - opens a web page to pick / edit a theme,
@@ -124,7 +124,7 @@ let lastScheme = null
 let lastConnectCount = 0
 
 function log(msg) {
-  console.log(`[themer] ${msg}`)
+  console.log(`[customfreebuff] ${msg}`)
 }
 
 function restartWatcher() {
@@ -634,7 +634,7 @@ server.listen(serverPort, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${serverPort}`
   console.log('')
   console.log('  ┌──────────────────────────────────────────────────┐')
-  console.log('  │   Freebuff Themer — theme studio                 │')
+  console.log('  │   CustomFreebuff — theme studio                  │')
   console.log('  └──────────────────────────────────────────────────┘')
   console.log(`  Studio   : ${url}`)
   console.log(`  Freebuff : ${findFreebuff(config.appPath) || 'not found (see the studio)'}`)

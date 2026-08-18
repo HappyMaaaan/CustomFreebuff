@@ -16,7 +16,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { listTargets, isAppPageTarget, themeTarget, CdpClient } from '../lib/cdp.mjs'
+import { findFreePort, listTargets, isAppPageTarget, themeTarget, CdpClient } from '../lib/cdp.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const EDGE_CANDIDATES = [
@@ -89,8 +89,10 @@ async function main() {
     process.exit(0)
   }
 
-  const staticPort = 8900
-  const cdpPort = 9335
+  // Free ports, never hard-coded: a busy port (e.g. a leftover instance)
+  // would make the test connect to the wrong process and hang.
+  const staticPort = await findFreePort(8900)
+  const cdpPort = await findFreePort(9400)
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-themer-test-'))
 
   const server = await serveFixture(staticPort)

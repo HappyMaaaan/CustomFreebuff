@@ -1,12 +1,12 @@
 {
-  "name": "freebuff-themer",
+  "name": "customfreebuff",
   "version": "1.0.0",
   "private": true,
-  "description": "A small theme studio for Freebuff Desktop — display-only customization, without touching the application files.",
+  "description": "CustomFreebuff — a small theme studio for Freebuff Desktop: display-only customization, without touching the application files.",
   "type": "module",
   "main": "themer.mjs",
   "bin": {
-    "freebuff-themer": "themer.mjs"
+    "customfreebuff": "themer.mjs"
   },
   "engines": {
     "node": ">=22"

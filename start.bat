@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Freebuff Themer
+title CustomFreebuff
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -11,7 +11,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Starting Freebuff Themer...
+echo Starting CustomFreebuff...
 echo Your browser will open the theme studio.
 echo Close this window to stop the studio.
 echo.

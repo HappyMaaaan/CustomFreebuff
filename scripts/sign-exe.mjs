@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/sign-exe.mjs — Signs dist/FreebuffThemer.exe with a Windows code
+ * scripts/sign-exe.mjs — Signs dist/CustomFreebuff.exe with a Windows code
  * signing certificate, using signtool from the Windows SDK.
  *
  * Certificate sources (first one set wins):
@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
-const EXE = path.join(ROOT, 'dist', 'FreebuffThemer.exe')
+const EXE = path.join(ROOT, 'dist', 'CustomFreebuff.exe')
 const REPO_URL = 'https://github.com/HappyMaaaan/CustomFreebuff'
 const TIMESTAMP_URL = 'http://timestamp.digicert.com'
 
@@ -75,7 +75,7 @@ function makeSelfSignedPfx() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-sign-'))
   const pfx = path.join(tmpDir, 'test.pfx')
   const ps = `
-$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Freebuff Themer (self-signed test)" -CertStoreLocation Cert:\\CurrentUser\\My -KeyUsage DigitalSignature -KeyExportPolicy Exportable -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CustomFreebuff (self-signed test)" -CertStoreLocation Cert:\\CurrentUser\\My -KeyUsage DigitalSignature -KeyExportPolicy Exportable -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
 $pwd = ConvertTo-SecureString -String "test" -Force -AsPlainText
 Export-PfxCertificate -Cert $cert -FilePath "${pfx}" -Password $pwd | Out-Null
 Write-Output $cert.Thumbprint
@@ -113,7 +113,7 @@ function verify(signtool) {
 }
 
 if (!fs.existsSync(EXE)) {
-  console.error('dist/FreebuffThemer.exe not found. Run `node scripts/build-exe.mjs` first.')
+  console.error('dist/CustomFreebuff.exe not found. Run `node scripts/build-exe.mjs` first.')
   process.exit(1)
 }
 
@@ -162,7 +162,7 @@ if (!source) {
 }
 
 // --- sign ---------------------------------------------------------------
-const common = ['sign', '/fd', 'SHA256', '/tr', TIMESTAMP_URL, '/td', 'SHA256', '/d', 'Freebuff Themer', '/du', REPO_URL]
+const common = ['sign', '/fd', 'SHA256', '/tr', TIMESTAMP_URL, '/td', 'SHA256', '/d', 'CustomFreebuff', '/du', REPO_URL]
 if (source.kind === 'pfx') {
   const withPwd = source.password ? ['/f', source.path, '/p', source.password] : ['/f', source.path]
   sign(signtool, [...common, ...withPwd, EXE])

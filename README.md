@@ -1,4 +1,4 @@
-# Freebuff Themer
+# CustomFreebuff
 
 A small theme studio for Freebuff Desktop. It changes the look of the app, nothing else.
 
@@ -22,7 +22,7 @@ Nothing else. The project uses only Node's built-in modules (`fetch`, `WebSocket
 
 ### Windows — standalone .exe (no Node needed)
 
-Double-click `FreebuffThemer.exe` from the `dist/` folder (or from a release).
+Double-click `CustomFreebuff.exe` from the `dist/` folder (or from a release).
 It is a self-contained executable: everything is bundled inside, nothing to
 install. Your browser opens the theme studio.
 
@@ -50,7 +50,7 @@ node themer.mjs
 node scripts/build-exe.mjs
 ```
 
-This produces `dist/FreebuffThemer.exe` (~90 MB, the Bun runtime is embedded).
+This produces `dist/CustomFreebuff.exe` (~90 MB, the Bun runtime is embedded).
 The build uses Bun's `--compile`. Bun is picked up from, in order: the `BUN`
 environment variable, `bun` on PATH, or the bun binary bundled with Freebuff
 Desktop itself — so you usually do not need to install anything extra.
