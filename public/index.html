@@ -189,6 +189,30 @@
     padding: 1px 5px;
     font-size: 12px;
   }
+  .launch-status { margin: -14px 0 20px; font-size: 13px; color: var(--warn); }
+  details.diag {
+    margin-bottom: 26px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 10px 14px;
+    font-size: 12.5px;
+  }
+  details.diag summary { cursor: pointer; font-weight: 700; color: var(--text); }
+  details.diag pre {
+    margin: 10px 0 0;
+    padding: 10px;
+    background: var(--chrome);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: auto;
+    max-height: 320px;
+    font: 11.5px/1.5 Consolas, "Cascadia Mono", monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--muted);
+  }
   .footer-note { margin-top: 26px; font-size: 12px; color: var(--faint); text-align: center; }
 </style>
 </head>
@@ -214,6 +238,12 @@
     <button class="ghost-danger" id="btnRestore">Restore original look</button>
     <button id="btnCleanup" style="display:none">Clean up leftover Freebuff processes</button>
   </div>
+  <div class="launch-status" id="launchStatus"></div>
+
+  <details class="diag" id="diagPanel" style="display:none">
+    <summary>What happened (diagnostics)</summary>
+    <pre id="diagBody"></pre>
+  </details>
 
   <section>
     <h2>Built-in themes</h2>
@@ -353,20 +383,50 @@
     }
   }
 
+  function showDiag(r) {
+    const panel = $('diagPanel')
+    const body = $('diagBody')
+    const parts = []
+    if (r && r.trace && Array.isArray(r.trace.lines) && r.trace.lines.length) {
+      parts.push(r.trace.lines.join('\n'))
+    }
+    if (r && r.diagnostics && Array.isArray(r.diagnostics.lines) && r.diagnostics.lines.length) {
+      parts.push(r.diagnostics.lines.join('\n'))
+    }
+    body.textContent = parts.length ? parts.join('\n') : 'No diagnostic data collected.'
+    panel.style.display = ''
+  }
+
+  function hideDiag() {
+    $('diagPanel').style.display = 'none'
+  }
+
   $('btnLaunch').addEventListener('click', async () => {
     const btn = $('btnLaunch')
     btn.disabled = true
+    const status = $('launchStatus')
+    status.textContent = 'Launching Freebuff… waiting for the window to appear (up to 45 s). Keep this page open.'
+    hideDiag()
     try {
       const r = await api('/api/launch', 'POST')
+      status.textContent = ''
       if (r.ok) {
         if (r.started) {
           showBanner('Freebuff is up — the theme is applied.', 'ok', 5000)
         } else {
-          showBanner('Freebuff is starting, the window can take a few seconds. If it never appears, click the cleanup button (or close every Freebuff.exe and bun.exe from the Freebuff folder in Task Manager), then try again.', 'warn', 12000)
+          showBanner('Freebuff started but no window appeared within 45 s. The details below say exactly what was detected.', 'error', 15000)
+          showDiag(r)
         }
+      } else if (r.error === 'already-running') {
+        showBanner(r.message, 'warn', 15000)
+        showDiag(r)
       } else {
-        showBanner(r.message || 'Could not launch Freebuff.', r.error === 'already-running' ? 'warn' : 'error', 8000)
+        showBanner(r.message || 'Could not launch Freebuff.', 'error', 10000)
+        showDiag(r)
       }
+    } catch (err) {
+      status.textContent = ''
+      showBanner('The studio could not reach its own server: ' + err.message, 'error', 10000)
     } finally {
       btn.disabled = false
       refresh()

@@ -110,8 +110,9 @@ Honest caveat: this is a third-party tool, use at your own risk. It is designed 
 
 ## Troubleshooting
 
-- **"Freebuff is already open"** — close it, then launch it again from the studio. Electron's single-instance lock ignores new command-line arguments when an instance is running.
-- **Freebuff processes stay in Task Manager without a window** — that is leftover helper processes from a previous session (GPU/utility). They block a new launch. The studio detects them and cleans them up automatically when you click **Launch**, or you can use the **Clean up leftover Freebuff processes** button.
+- **"Freebuff is already open"** — click **Launch** once more. The studio now waits a few seconds for a closing instance to fully exit before giving up. If it still refuses, a window really is open: close it, or use **Clean up leftover Freebuff processes**. Electron's single-instance lock ignores new command-line arguments while an instance runs.
+- **Freebuff processes stay in Task Manager without a window** — that is leftover helper processes from a previous session (GPU/utility) or an orphaned orchestrator (`bun.exe` from the Freebuff folder). They block a new launch. The studio detects both and cleans them up automatically when you click **Launch**, or you can use the **Clean up leftover Freebuff processes** button.
+- **Launching shows "no window appeared"** — open the **What happened (diagnostics)** panel below the buttons: it lists every step of the launch, what processes were found, whether the debug port came up, and what Freebuff's own logs say. Every launch is also written to `%APPDATA%\freebuff-themer\launch-trace.log` (macOS/Linux: `~/.config/freebuff-themer/`). Paste that content if you need help.
 - **"Freebuff is running without the debug port"** — it was started some other way. Close it and relaunch from the studio.
 - **The theme disappeared after an app update** — the app reloaded its page without the studio attached. Reopen the studio and launch Freebuff from it again.
 - **Freebuff not found** — set the path to `Freebuff.exe` (Windows) or `Freebuff` (macOS/Linux) in the studio, or use the `FREEBUFF_EXE` environment variable.

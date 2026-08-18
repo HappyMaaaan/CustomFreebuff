@@ -15,6 +15,7 @@
 
 import fs from 'node:fs'
 import http from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,8 +34,10 @@ import {
   isRunning,
   killStaleProcesses,
   launchFreebuff,
+  processSnapshot,
   readNativeThemePref,
   themerConfigDir,
+  waitForInstanceExit,
 } from './lib/launcher.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -229,6 +232,7 @@ async function statePayload() {
     themeId: config.themeId ?? null,
     customCss: config.customCss ?? '',
     nativePref: readNativeThemePref(),
+    lastTrace: tracePayload(lastLaunchTrace),
     appVersion: null,
     themes: THEMES.map((t) => ({
       id: t.id,
@@ -241,6 +245,72 @@ async function statePayload() {
 }
 
 let serverPort = null
+
+/* ------------------------------------------------------------------ */
+/* Launch diagnostics: every launch attempt is traced to a file AND   */
+/* returned to the UI, so a failure can never be silent again.        */
+/* ------------------------------------------------------------------ */
+
+let lastLaunchTrace = null
+
+function makeTrace() {
+  return { at: new Date().toISOString(), lines: [] }
+}
+
+function traceLog(trace, line) {
+  trace.lines.push(line)
+  console.log(`[launch] ${line}`)
+}
+
+function tracePayload(trace) {
+  return trace ? { at: trace.at, result: trace.result, message: trace.message, lines: trace.lines } : null
+}
+
+async function finishTrace(trace, result, message) {
+  trace.result = result
+  trace.message = message
+  lastLaunchTrace = trace
+  try {
+    const dir = themerConfigDir()
+    fs.mkdirSync(dir, { recursive: true })
+    const text = trace.lines.map((l) => `    ${l}`).join('\n')
+    fs.appendFileSync(
+      path.join(dir, 'launch-trace.log'),
+      `\n[${trace.at}] ${result.toUpperCase()}: ${message}\n${text}\n`,
+    )
+  } catch {
+    /* best-effort */
+  }
+}
+
+function freebuffUserDataDir() {
+  if (process.platform === 'win32') return path.join(process.env.APPDATA || os.homedir(), 'Freebuff')
+  if (process.platform === 'darwin')
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Freebuff')
+  return path.join(os.homedir(), '.config', 'Freebuff')
+}
+
+/** Reads the files Freebuff leaves behind when a launch goes wrong. */
+async function launchDiagnostics(debugPort) {
+  const lines = []
+  const snap = await processSnapshot()
+  lines.push(`Processes now: ${JSON.stringify(snap)}`)
+  try {
+    const portFile = path.join(freebuffUserDataDir(), 'DevToolsActivePort')
+    lines.push(`DevToolsActivePort: ${fs.readFileSync(portFile, 'utf8').trim().replace(/\n/g, ' | ')}`)
+  } catch {
+    lines.push('DevToolsActivePort: (absent — Chromium never started its debug port)')
+  }
+  try {
+    const logFile = path.join(freebuffUserDataDir(), 'logs', 'orchestrator-stderr.log')
+    const tail = fs.readFileSync(logFile, 'utf8').trim().split(/\r?\n/).slice(-8).join('\n    ')
+    lines.push(`Orchestrator log tail:\n    ${tail}`)
+  } catch {
+    lines.push('Orchestrator log: (absent — the orchestrator never started)')
+  }
+  return { lines }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`)
   const p = url.pathname
@@ -268,25 +338,57 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/api/launch' && req.method === 'POST') {
+    const trace = makeTrace()
     const exe = findFreebuff(config.appPath)
     if (!exe) {
+      await finishTrace(trace, 'error', 'Freebuff executable not found.')
       return sendJson(res, 400, {
         error: 'freebuff-not-found',
         message: 'Freebuff Desktop was not found. Use the "Freebuff path" field in the studio, or the FREEBUFF_EXE environment variable.',
+        trace: tracePayload(trace),
       })
     }
+    traceLog(trace, `Launch requested. Exe: ${exe}`)
+    traceLog(trace, `Processes before: ${JSON.stringify(await processSnapshot())}`)
+
+    // A live windowed instance cannot be relaunched: Electron's single-instance
+    // lock would make the new process quit silently. But the user often clicks
+    // Launch right after closing Freebuff, while it is still quitting — so wait
+    // a few seconds for it to exit before refusing.
     if (await isRunning()) {
-      return sendJson(res, 409, {
-        error: 'already-running',
-        message: 'Freebuff is already open. Close it, then launch it again from this studio so the theme can apply.',
-      })
+      traceLog(trace, 'Windowed instance detected — waiting up to 8 s for it to fully exit.')
+      const exited = await waitForInstanceExit(8000)
+      if (!exited) {
+        traceLog(trace, 'Instance still running after 8 s — refusing to launch (single-instance lock).')
+        await finishTrace(trace, 'blocked', 'Freebuff is already open (window detected).')
+        return sendJson(res, 409, {
+          error: 'already-running',
+          message:
+            'Freebuff is still open (a window is detected) after waiting 8 seconds. Close its window, or if it is stuck use the Clean up button, or close every Freebuff.exe and bun.exe from the Freebuff folder in Task Manager, then click Launch again. The studio never kills a live instance on its own, because that could destroy an active session.',
+          trace: tracePayload(trace),
+        })
+      }
+      traceLog(trace, 'Previous instance exited — continuing the launch.')
     }
+
     // A previous session may have left windowless helper processes or an
     // orphaned orchestrator behind. They block a new launch (Electron's
     // single-instance lock and the desktop-state profile lock), so clear them
     // before starting. Never touches a running instance.
     const stale = await killStaleProcesses()
-    if (stale > 0) log(`Removed ${stale} leftover Freebuff process(es).`)
+    traceLog(trace, `Removed ${stale} leftover Freebuff process(es).`)
+    // Give a dying previous instance time to release its locks.
+    const exited = await waitForInstanceExit(6000)
+    traceLog(trace, `Previous instance fully exited: ${exited}`)
+    if (await isRunning()) {
+      traceLog(trace, 'A windowed instance (re)appeared during cleanup — refusing to launch.')
+      await finishTrace(trace, 'blocked', 'A windowed Freebuff instance is running again.')
+      return sendJson(res, 409, {
+        error: 'already-running',
+        message: 'Freebuff opened again during the cleanup. Close its window, wait for it to quit, then click Launch once more.',
+        trace: tracePayload(trace),
+      })
+    }
     // Let the OS release file handles / locks before starting a fresh instance.
     await new Promise((r) => setTimeout(r, 1000))
     config.appPath = exe
@@ -294,16 +396,49 @@ const server = http.createServer(async (req, res) => {
     saveConfig(config)
     try {
       launchFreebuff(exe, config.debugPort)
+      traceLog(trace, `Spawned Freebuff with debug port ${config.debugPort}.`)
     } catch (err) {
-      return sendJson(res, 500, { error: 'launch-failed', message: err.message })
+      traceLog(trace, `Spawn failed: ${err.message}`)
+      await finishTrace(trace, 'error', err.message)
+      return sendJson(res, 500, { error: 'launch-failed', message: err.message, trace: tracePayload(trace) })
     }
     restartWatcher()
-    log(`Freebuff launched (${path.basename(exe)}) with debug port ${config.debugPort}.`)
     // Wait for an actual WINDOW (a page target), not just the debug port: the
-    // port answers as soon as Chromium starts, even when boot later fails.
-    const started = await waitForAppWindow(config.debugPort, 25000)
-    if (started) log('Freebuff window is up — theme applied.')
-    return sendJson(res, 200, { ok: true, debugPort: config.debugPort, started })
+    // port answers as soon as Chromium starts, even when boot later fails. A
+    // cold orchestrator start plus the app's 10 s profile-lock wait can exceed
+    // 25 s, so the budget is generous and every step is traced.
+    const started = await waitForAppWindow(config.debugPort, 45000, (elapsed, port, win) => {
+      traceLog(trace, `t+${elapsed}s: debug port ${port ? 'up' : 'not yet'}, app window ${win ? 'up' : 'not yet'}`)
+    })
+    if (started) {
+      traceLog(trace, 'App window detected — launch successful.')
+      await finishTrace(trace, 'ok', 'App window detected.')
+      return sendJson(res, 200, { ok: true, debugPort: config.debugPort, started: true, trace: tracePayload(trace) })
+    }
+    // No window within the budget: collect everything the app left behind so
+    // the failure is explainable instead of silent.
+    traceLog(trace, 'No window appeared within 45 s — collecting diagnostics.')
+    const diag = await launchDiagnostics(config.debugPort)
+    for (const line of diag.lines) traceLog(trace, line)
+    await finishTrace(trace, 'no-window', 'Freebuff processes may be running, but no window appeared.')
+    return sendJson(res, 200, {
+      ok: true,
+      debugPort: config.debugPort,
+      started: false,
+      trace: tracePayload(trace),
+      diagnostics: diag,
+    })
+  }
+
+  if (p === '/api/diagnostics' && req.method === 'GET') {
+    const snap = await processSnapshot()
+    const diag = await launchDiagnostics(config.debugPort)
+    return sendJson(res, 200, {
+      snapshot: snap,
+      diagnostics: diag,
+      lastTrace: tracePayload(lastLaunchTrace),
+      debugPort: config.debugPort ?? null,
+    })
   }
 
   if (p === '/api/cleanup' && req.method === 'POST') {
