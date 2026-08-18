@@ -59,6 +59,29 @@ function inCircle(x, y, cx, cy, r) {
   return dx * dx + dy * dy <= r * r
 }
 
+// "CF" in a tiny 5x7 bitmap font, drawn 2x (10x14 px each).
+const FONT = {
+  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+  F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+}
+
+function drawLetters(x, y) {
+  const scale = 2
+  const cells = []
+  let cx = x
+  for (const letter of ['C', 'F']) {
+    for (let ry = 0; ry < FONT[letter].length; ry++) {
+      for (let rx = 0; rx < FONT[letter][ry].length; rx++) {
+        if (FONT[letter][ry][rx] === '#') cells.push([cx + rx * scale, y + ry * scale])
+      }
+    }
+    cx += FONT[letter][0].length * scale + 4
+  }
+  return cells
+}
+
+const LETTERS = drawLetters(20, 11)
+
 // One row of RGBA pixels.
 function row(y) {
   const out = Buffer.alloc(SIZE * 4)
@@ -73,28 +96,37 @@ function row(y) {
       g = 14
       b = 14
       a = 255
-      // palette: big green dot + smaller colored dots
-      if (inCircle(x, y, 24, 27, 10)) {
+      // "CF" in light gray (top)
+      for (const [lx, ly] of LETTERS) {
+        if (x >= lx && x < lx + 2 && y >= ly && y < ly + 2) {
+          r = 205
+          g = 205
+          b = 205
+          a = 255
+        }
+      }
+      // palette: big green dot + smaller colored dots (bottom half)
+      if (inCircle(x, y, 24, 44, 9)) {
         r = 124
         g = 255
         b = 63
         a = 255
-      } else if (inCircle(x, y, 44, 19, 4)) {
+      } else if (inCircle(x, y, 48, 15, 4)) {
         r = 136
         g = 192
         b = 208
         a = 255
-      } else if (inCircle(x, y, 49, 33, 4)) {
+      } else if (inCircle(x, y, 51, 34, 4)) {
         r = 247
         g = 118
         b = 142
         a = 255
-      } else if (inCircle(x, y, 42, 46, 4)) {
+      } else if (inCircle(x, y, 44, 51, 4)) {
         r = 216
         g = 161
         b = 74
         a = 255
-      } else if (inCircle(x, y, 53, 27, 3)) {
+      } else if (inCircle(x, y, 53, 44, 3)) {
         r = 80
         g = 250
         b = 123

@@ -8,6 +8,9 @@
  * The token is never printed.
  *
  * Usage: node scripts/gh-release.mjs [tag] [notes-file.md]
+ *
+ * Without a tag, the next patch version after the latest GitHub release is
+ * used automatically (v1.0.1, then v1.0.2, …).
  */
 
 import { spawnSync } from 'node:child_process'
@@ -19,7 +22,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const ASSET = path.join(ROOT, 'dist', 'CustomFreebuff.exe')
 const REPO = 'HappyMaaaan/CustomFreebuff'
-const TAG = process.argv[2] || 'v1.0.0'
+const TAG_ARG = process.argv[2] || null
+let TAG = TAG_ARG
 const NOTES_FILE = process.argv[3] ? path.resolve(process.argv[3]) : null
 
 function getToken() {
@@ -168,6 +172,17 @@ const token = getToken()
 if (!token) {
   console.error('No GitHub credentials found (GITHUB_TOKEN env or git credential manager).')
   process.exit(1)
+}
+
+// Version bumping: with no tag argument, release the next patch version
+// after the latest GitHub release (the user asked to always bump).
+let latestTag = null
+if (!TAG) {
+  const { status, json } = await api(`/repos/${REPO}/releases/latest`, { token })
+  if (status === 200 && json && json.tag_name) latestTag = json.tag_name
+  const m = latestTag ? String(latestTag).match(/v?(\d+)\.(\d+)\.(\d+)/) : null
+  TAG = m ? `v${m[1]}.${m[2]}.${Number(m[3]) + 1}` : 'v1.0.0'
+  console.log(`No tag given — bumping to ${TAG} (next after ${latestTag || 'nothing yet'}).`)
 }
 
 console.log(`Releasing ${TAG} -> ${REPO}`)

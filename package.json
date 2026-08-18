@@ -1,6 +1,6 @@
 {
   "name": "customfreebuff",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "CustomFreebuff — a small theme studio for Freebuff Desktop: display-only customization, without touching the application files.",
   "type": "module",
