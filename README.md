@@ -20,9 +20,15 @@ Nothing else. The project uses only Node's built-in modules (`fetch`, `WebSocket
 
 ## Usage
 
-### Windows
+### Windows — standalone .exe (no Node needed)
 
-Double-click `start.bat`. Your browser opens the theme studio.
+Double-click `FreebuffThemer.exe` from the `dist/` folder (or from a release).
+It is a self-contained executable: everything is bundled inside, nothing to
+install. Your browser opens the theme studio.
+
+### Windows — from source
+
+Double-click `start.bat` (requires Node.js).
 
 ### macOS / Linux
 
@@ -37,6 +43,19 @@ npm start
 # or
 node themer.mjs
 ```
+
+## Building the standalone .exe
+
+```bash
+node scripts/build-exe.mjs
+```
+
+This produces `dist/FreebuffThemer.exe` (~90 MB, the Bun runtime is embedded).
+The build uses Bun's `--compile`. Bun is picked up from, in order: the `BUN`
+environment variable, `bun` on PATH, or the bun binary bundled with Freebuff
+Desktop itself — so you usually do not need to install anything extra.
+The studio page and the themes are inlined into the executable, so the file
+works on its own, anywhere.
 
 ### In the studio
 
@@ -108,12 +127,15 @@ The tests launch a headless Chromium against a page that mimics the Freebuff ren
 ## Project layout
 
 ```
-start.bat / start.sh   # launchers
+start.bat / start.sh   # launchers (require Node.js)
 themer.mjs             # local server + API + orchestration
+lib/assets.mjs         # asset loading (embedded in the exe / disk in dev)
 lib/cdp.mjs            # minimal CDP client + CSS injection
 lib/launcher.mjs       # Freebuff discovery and launch
 public/index.html      # the studio (single page, no build step)
 themes/*.json          # built-in themes
+scripts/build-exe.mjs  # builds the standalone .exe (Bun --compile)scripts/build-embed.mjs
+scripts/make-icon.mjs
 test/                  # e2e tests (headless Edge/Chrome)
 ```
 

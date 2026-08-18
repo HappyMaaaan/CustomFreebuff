@@ -18,6 +18,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadAssets } from './lib/assets.mjs'
 import { findFreePort, listTargets, isAppPageTarget, themeTarget, watchAndTheme } from './lib/cdp.mjs'
 import {
   findFreebuff,
@@ -29,10 +30,13 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
-const THEMES_DIR = path.join(__dirname, 'themes')
 
 const UI_PORT_START = Number(process.env.FREEBUFF_THEMER_PORT) || 8765
 const DEBUG_PORT_START = 9333
+
+// The studio page and built-in themes. In a compiled executable these come
+// from the embedded bundle; in dev they are read from the project directory.
+const assets = await loadAssets()
 
 /* ------------------------------------------------------------------ */
 /* Persisted config (in OUR directory, never Freebuff's).              */
@@ -60,22 +64,7 @@ let config = loadConfig()
 /* Built-in themes.                                                    */
 /* ------------------------------------------------------------------ */
 
-function loadThemes() {
-  const themes = []
-  for (const file of fs.readdirSync(THEMES_DIR)) {
-    if (!file.endsWith('.json')) continue
-    try {
-      const theme = JSON.parse(fs.readFileSync(path.join(THEMES_DIR, file), 'utf8'))
-      if (theme && theme.id && theme.colors) themes.push(theme)
-    } catch (err) {
-      console.error(`[themer] ignored theme (${file}): ${err.message}`)
-    }
-  }
-  themes.sort((a, b) => (a.id < b.id ? -1 : 1))
-  return themes
-}
-
-const THEMES = loadThemes()
+const THEMES = assets.themes
 
 function themeById(id) {
   return THEMES.find((t) => t.id === id) ?? null
@@ -247,7 +236,8 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname
 
   if (p === '/' || p === '/index.html') {
-    return serveStatic(res, path.join(PUBLIC_DIR, 'index.html'))
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(assets.indexHtml)
   }
 
   if (p.startsWith('/static/')) {
