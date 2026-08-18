@@ -67,7 +67,9 @@ async function ensureTag() {
 
 async function findRelease(token, tag) {
   const { status, json } = await api(`/repos/${REPO}/releases/tags/${tag}`, { token })
-  if (status === 200 && json) return { id: json.id, uploadUrl: json.upload_url, url: json.html_url }
+  if (status === 200 && json) {
+    return { id: json.id, uploadUrl: json.upload_url, url: json.html_url, assets: json.assets || [] }
+  }
   return null
 }
 
@@ -112,8 +114,18 @@ async function createRelease(token, tag) {
   return { id: json.id, uploadUrl: json.upload_url, url: json.html_url }
 }
 
+async function deleteExistingAsset(token, release, name) {
+  if (!release.assets) return
+  const existing = release.assets.find((a) => a.name === name)
+  if (existing) {
+    await api(`/repos/${REPO}/releases/assets/${existing.id}`, { method: 'DELETE', token })
+    console.log(`Removed previous asset ${name} (${existing.id}).`)
+  }
+}
+
 async function uploadAsset(token, release) {
   const data = fs.readFileSync(ASSET)
+  await deleteExistingAsset(token, release, 'FreebuffThemer.exe')
   const uploadUrl = release.uploadUrl.replace('{?name,label}', '')
   const target = `${uploadUrl}?name=${encodeURIComponent('FreebuffThemer.exe')}&label=${encodeURIComponent('Freebuff Themer (Windows x64)')}`
 
@@ -162,10 +174,12 @@ await ensureTag()
 
 let release = await findRelease(token, TAG)
 if (release) {
-  console.log('Release already exists, uploading the asset to it.')
+  console.log('Release already exists, replacing its asset.')
+  release.assets = release.assets || []
 } else {
   release = await createRelease(token, TAG)
   console.log('Release created.')
+  release.assets = []
 }
 
 const downloadUrl = await uploadAsset(token, release)

@@ -24,7 +24,7 @@ import {
   listTargets,
   isAppPageTarget,
   themeTarget,
-  waitForDebugPort,
+  waitForAppWindow,
   watchAndTheme,
 } from './lib/cdp.mjs'
 import {
@@ -281,11 +281,14 @@ const server = http.createServer(async (req, res) => {
         message: 'Freebuff is already open. Close it, then launch it again from this studio so the theme can apply.',
       })
     }
-    // A previous session may have left windowless helper processes behind.
-    // They block a new launch (Electron's single-instance lock), so clear
-    // them before starting. Never touches a running instance.
+    // A previous session may have left windowless helper processes or an
+    // orphaned orchestrator behind. They block a new launch (Electron's
+    // single-instance lock and the desktop-state profile lock), so clear them
+    // before starting. Never touches a running instance.
     const stale = await killStaleProcesses()
-    if (stale > 0) log(`Removed ${stale} leftover Freebuff process(es) with no window.`)
+    if (stale > 0) log(`Removed ${stale} leftover Freebuff process(es).`)
+    // Let the OS release file handles / locks before starting a fresh instance.
+    await new Promise((r) => setTimeout(r, 1000))
     config.appPath = exe
     if (!config.debugPort) config.debugPort = await findFreePort(DEBUG_PORT_START)
     saveConfig(config)
@@ -296,10 +299,10 @@ const server = http.createServer(async (req, res) => {
     }
     restartWatcher()
     log(`Freebuff launched (${path.basename(exe)}) with debug port ${config.debugPort}.`)
-    // Give the app time to boot; the watcher keeps applying the theme even if
-    // the window takes longer.
-    const started = await waitForDebugPort(config.debugPort, 20000)
-    if (started) log('Freebuff is up — theme applied.')
+    // Wait for an actual WINDOW (a page target), not just the debug port: the
+    // port answers as soon as Chromium starts, even when boot later fails.
+    const started = await waitForAppWindow(config.debugPort, 25000)
+    if (started) log('Freebuff window is up — theme applied.')
     return sendJson(res, 200, { ok: true, debugPort: config.debugPort, started })
   }
 

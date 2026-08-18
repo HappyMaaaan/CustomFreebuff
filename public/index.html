@@ -362,7 +362,7 @@
         if (r.started) {
           showBanner('Freebuff is up — the theme is applied.', 'ok', 5000)
         } else {
-          showBanner('Freebuff is starting, the window can take a few seconds. If it never appears, close every Freebuff.exe in Task Manager (or use the cleanup button) and try again.', 'warn', 12000)
+          showBanner('Freebuff is starting, the window can take a few seconds. If it never appears, click the cleanup button (or close every Freebuff.exe and bun.exe from the Freebuff folder in Task Manager), then try again.', 'warn', 12000)
         }
       } else {
         showBanner(r.message || 'Could not launch Freebuff.', r.error === 'already-running' ? 'warn' : 'error', 8000)
