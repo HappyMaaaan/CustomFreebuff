@@ -7,7 +7,7 @@
  * Git Credential Manager (the credentials already stored on this machine).
  * The token is never printed.
  *
- * Usage: node scripts/gh-release.mjs [tag]
+ * Usage: node scripts/gh-release.mjs [tag] [notes-file.md]
  */
 
 import { spawnSync } from 'node:child_process'
@@ -20,6 +20,7 @@ const ROOT = path.join(__dirname, '..')
 const ASSET = path.join(ROOT, 'dist', 'FreebuffThemer.exe')
 const REPO = 'HappyMaaaan/CustomFreebuff'
 const TAG = process.argv[2] || 'v1.0.0'
+const NOTES_FILE = process.argv[3] ? path.resolve(process.argv[3]) : null
 
 function getToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN
@@ -71,28 +72,30 @@ async function findRelease(token, tag) {
 }
 
 async function createRelease(token, tag) {
-  const notes = [
-    '## Freebuff Themer v1.0.0',
-    '',
-    'A small theme studio for Freebuff Desktop: pick a theme (or write your own CSS) and it is applied live to the app — display only.',
-    '',
-    '### What is in the box',
-    '',
-    '- **FreebuffThemer.exe** — standalone Windows executable. Double-click it: no Node.js, nothing to install.',
-    '',
-    '### How to use',
-    '',
-    '1. Close Freebuff if it is already open.',
-    '2. Run FreebuffThemer.exe — your browser opens the theme studio.',
-    '3. Click **Launch Freebuff with theming**, then pick a theme.',
-    '',
-    '### Notes',
-    '',
-    '- Display only: no file of the Freebuff installation is modified, nothing is bypassed, everything is reversible.',
-    '- The executable is not code-signed, so Windows SmartScreen may show a warning the first time.',
-    '',
-    'Source: https://github.com/titi62410/CustomFreebuff',
-  ].join('\n')
+  const notes = NOTES_FILE && fs.existsSync(NOTES_FILE)
+    ? fs.readFileSync(NOTES_FILE, 'utf8')
+    : [
+        `## Freebuff Themer ${TAG}`,
+        '',
+        'A small theme studio for Freebuff Desktop: pick a theme (or write your own CSS) and it is applied live to the app — display only.',
+        '',
+        '### What is in the box',
+        '',
+        '- **FreebuffThemer.exe** — standalone Windows executable. Double-click it: no Node.js, nothing to install.',
+        '',
+        '### How to use',
+        '',
+        '1. Close Freebuff if it is already open.',
+        '2. Run FreebuffThemer.exe — your browser opens the theme studio.',
+        '3. Click **Launch Freebuff with theming**, then pick a theme.',
+        '',
+        '### Notes',
+        '',
+        '- Display only: no file of the Freebuff installation is modified, nothing is bypassed, everything is reversible.',
+        '- The executable is not code-signed, so Windows SmartScreen may show a warning the first time.',
+        '',
+        'Source: https://github.com/HappyMaaaan/CustomFreebuff',
+      ].join('\n')
 
   const { status, json } = await api(`/repos/${REPO}/releases`, {
     method: 'POST',

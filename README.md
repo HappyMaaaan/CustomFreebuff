@@ -111,6 +111,7 @@ Honest caveat: this is a third-party tool, use at your own risk. It is designed 
 ## Troubleshooting
 
 - **"Freebuff is already open"** — close it, then launch it again from the studio. Electron's single-instance lock ignores new command-line arguments when an instance is running.
+- **Freebuff processes stay in Task Manager without a window** — that is leftover helper processes from a previous session (GPU/utility). They block a new launch. The studio detects them and cleans them up automatically when you click **Launch**, or you can use the **Clean up leftover Freebuff processes** button.
 - **"Freebuff is running without the debug port"** — it was started some other way. Close it and relaunch from the studio.
 - **The theme disappeared after an app update** — the app reloaded its page without the studio attached. Reopen the studio and launch Freebuff from it again.
 - **Freebuff not found** — set the path to `Freebuff.exe` (Windows) or `Freebuff` (macOS/Linux) in the studio, or use the `FREEBUFF_EXE` environment variable.

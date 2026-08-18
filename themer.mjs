@@ -19,10 +19,19 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadAssets } from './lib/assets.mjs'
-import { findFreePort, listTargets, isAppPageTarget, themeTarget, watchAndTheme } from './lib/cdp.mjs'
+import {
+  findFreePort,
+  listTargets,
+  isAppPageTarget,
+  themeTarget,
+  waitForDebugPort,
+  watchAndTheme,
+} from './lib/cdp.mjs'
 import {
   findFreebuff,
+  freebuffProcessInfo,
   isRunning,
+  killStaleProcesses,
   launchFreebuff,
   readNativeThemePref,
   themerConfigDir,
@@ -195,7 +204,7 @@ function readBody(req) {
 }
 
 async function statePayload() {
-  const running = await isRunning()
+  const proc = await freebuffProcessInfo()
   let connected = 0
   let debugAlive = false
   if (config.debugPort) {
@@ -210,7 +219,8 @@ async function statePayload() {
   return {
     freebuffPath: findFreebuff(config.appPath),
     freebuffFound: Boolean(findFreebuff(config.appPath)),
-    running,
+    running: proc.running,
+    staleCount: proc.staleCount,
     debugPort: config.debugPort ?? null,
     debugAlive,
     connected,
@@ -271,6 +281,11 @@ const server = http.createServer(async (req, res) => {
         message: 'Freebuff is already open. Close it, then launch it again from this studio so the theme can apply.',
       })
     }
+    // A previous session may have left windowless helper processes behind.
+    // They block a new launch (Electron's single-instance lock), so clear
+    // them before starting. Never touches a running instance.
+    const stale = await killStaleProcesses()
+    if (stale > 0) log(`Removed ${stale} leftover Freebuff process(es) with no window.`)
     config.appPath = exe
     if (!config.debugPort) config.debugPort = await findFreePort(DEBUG_PORT_START)
     saveConfig(config)
@@ -281,7 +296,23 @@ const server = http.createServer(async (req, res) => {
     }
     restartWatcher()
     log(`Freebuff launched (${path.basename(exe)}) with debug port ${config.debugPort}.`)
-    return sendJson(res, 200, { ok: true, debugPort: config.debugPort })
+    // Give the app time to boot; the watcher keeps applying the theme even if
+    // the window takes longer.
+    const started = await waitForDebugPort(config.debugPort, 20000)
+    if (started) log('Freebuff is up — theme applied.')
+    return sendJson(res, 200, { ok: true, debugPort: config.debugPort, started })
+  }
+
+  if (p === '/api/cleanup' && req.method === 'POST') {
+    const killed = await killStaleProcesses()
+    log(`Cleanup: removed ${killed} leftover Freebuff process(es).`)
+    return sendJson(res, 200, {
+      ok: true,
+      killed,
+      message: killed > 0
+        ? `Removed ${killed} leftover Freebuff process(es). You can launch it now.`
+        : 'Nothing to clean up — either Freebuff is running normally, or no leftover process was found.',
+    })
   }
 
   if (p === '/api/apply' && req.method === 'POST') {

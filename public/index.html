@@ -212,6 +212,7 @@
     <button class="primary" id="btnLaunch">Launch Freebuff with theming</button>
     <button id="btnReapply">Re-apply theme</button>
     <button class="ghost-danger" id="btnRestore">Restore original look</button>
+    <button id="btnCleanup" style="display:none">Clean up leftover Freebuff processes</button>
   </div>
 
   <section>
@@ -284,6 +285,10 @@
       dot.className = 'dot err'
       return 'Freebuff not found — set the path below'
     }
+    if (!s.running && s.staleCount > 0) {
+      dot.className = 'dot warn'
+      return `Leftover Freebuff process(es) with no window — clean them up, then launch`
+    }
     if (!s.running) {
       dot.className = 'dot'
       return 'Freebuff is closed — launch it from the studio'
@@ -339,6 +344,7 @@
     if (!s) return
     state = s
     $('statusText').textContent = statusLine(s)
+    $('btnCleanup').style.display = !s.running && s.staleCount > 0 ? '' : 'none'
     $('pathInput').placeholder = s.freebuffPath || 'Freebuff not found — paste the path to Freebuff.exe'
     $('pathInput').value = s.freebuffPath || ''
     renderThemes(s)
@@ -348,9 +354,28 @@
   }
 
   $('btnLaunch').addEventListener('click', async () => {
-    const r = await api('/api/launch', 'POST')
-    if (r.ok) showBanner('Freebuff is starting — the theme will be applied automatically.', 'ok', 5000)
-    else showBanner(r.message || 'Could not launch Freebuff.', r.error === 'already-running' ? 'warn' : 'error', 8000)
+    const btn = $('btnLaunch')
+    btn.disabled = true
+    try {
+      const r = await api('/api/launch', 'POST')
+      if (r.ok) {
+        if (r.started) {
+          showBanner('Freebuff is up — the theme is applied.', 'ok', 5000)
+        } else {
+          showBanner('Freebuff is starting, the window can take a few seconds. If it never appears, close every Freebuff.exe in Task Manager (or use the cleanup button) and try again.', 'warn', 12000)
+        }
+      } else {
+        showBanner(r.message || 'Could not launch Freebuff.', r.error === 'already-running' ? 'warn' : 'error', 8000)
+      }
+    } finally {
+      btn.disabled = false
+      refresh()
+    }
+  })
+
+  $('btnCleanup').addEventListener('click', async () => {
+    const r = await api('/api/cleanup', 'POST')
+    showBanner(r.message || 'Cleanup done.', 'ok', 5000)
     refresh()
   })
 
