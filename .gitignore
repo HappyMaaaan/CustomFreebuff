@@ -5,3 +5,4 @@ node_modules/
 dist/
 build/
 lib/embedded-assets.mjs
+.inspect2/
