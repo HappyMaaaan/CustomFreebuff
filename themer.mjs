@@ -23,6 +23,7 @@ import { loadAssets } from './lib/assets.mjs'
 import {
   bringAppWindowToFront,
   findFreePort,
+  isPortFree,
   listTargets,
   isAppPageTarget,
   probeAppWindowState,
@@ -395,7 +396,12 @@ const server = http.createServer(async (req, res) => {
     // Let the OS release file handles / locks before starting a fresh instance.
     await new Promise((r) => setTimeout(r, 1000))
     config.appPath = exe
-    if (!config.debugPort) config.debugPort = await findFreePort(DEBUG_PORT_START)
+    // Use the saved debug port only if it is actually free — a leftover
+    // process holding it would make Chromium fail to bind and the launch
+    // would look broken for no reason.
+    if (!config.debugPort || !(await isPortFree(config.debugPort))) {
+      config.debugPort = await findFreePort(DEBUG_PORT_START)
+    }
     saveConfig(config)
     try {
       launchFreebuff(exe, config.debugPort)
@@ -437,20 +443,38 @@ const server = http.createServer(async (req, res) => {
             trace,
             `OS scan: ${osScan.windows.length} top-level windows, foreground desk=${osScan.fgDesk}${fg ? ` (${(fg.title || '').slice(0, 40)})` : ''}`,
           )
-          const fb = osScan.windows.filter(
-            (w) => /freebuff desktop/i.test(w.title || '') || (/freebuff/i.test(w.title || '') && w.vis && !w.min),
-          )
+          // Identify the REAL Freebuff window by its owning process
+          // (Freebuff.exe), never by title: "Freebuff" appears in the titles
+          // of Chrome, Discord, Explorer… and forcing THOSE windows to the
+          // front is what kept hiding the actual app window.
+          const isFbProc = (w) => /freebuff\.exe$/i.test((w.proc || '').trim())
+          let fb = osScan.windows.filter((w) => isFbProc(w) && /freebuff desktop/i.test(w.title || ''))
+          if (fb.length === 0) fb = osScan.windows.filter((w) => isFbProc(w))
           for (const w of fb.slice(0, 6)) {
             const sameDesk = osScan.fgDesk == null || w.desk === osScan.fgDesk
             traceLog(
               trace,
-              `OS Freebuff window z=${w.z} pid=${w.pid} minimized=${w.min} rect=${w.rect} desk=${w.desk}${sameDesk ? '' : ' *** ON A DIFFERENT VIRTUAL DESKTOP ***'}`,
+              `OS Freebuff window z=${w.z} pid=${w.pid} proc=${w.proc || '?'} vis=${w.vis} minimized=${w.min} rect=${w.rect} desk=${w.desk}${sameDesk ? '' : ' *** ON A DIFFERENT VIRTUAL DESKTOP ***'}`,
             )
           }
-          const main = fb.find((w) => !w.min) || fb[0]
+          // Prefer a visible, un-minimized window; fall back to any of them.
+          const main = fb.find((w) => w.vis && !w.min) || fb.find((w) => !w.min) || fb[0]
           if (main) {
             const forced = await forceWindowVisible(main.hwnd)
             traceLog(trace, `Force visible (hwnd ${main.hwnd}): ${JSON.stringify(forced)}`)
+            // A freshly opened window can still be settling (or was created
+            // hidden); one more pass after a moment covers that.
+            await new Promise((r) => setTimeout(r, 2000))
+            const scan2 = await scanOsWindows()
+            if (scan2) {
+              const again = scan2.windows
+                .filter((w) => isFbProc(w) && /freebuff desktop/i.test(w.title || ''))
+                .find((w) => w.vis && !w.min)
+              if (again && again.hwnd !== main.hwnd) {
+                const forced2 = await forceWindowVisible(again.hwnd)
+                traceLog(trace, `Force visible pass 2 (hwnd ${again.hwnd}): ${JSON.stringify(forced2)}`)
+              }
+            }
           }
         }
         // Screenshot of the primary screen for the record — the definitive
