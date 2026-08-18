@@ -19,8 +19,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { execFile } from 'node:child_process'
-
 import { loadAssets } from './lib/assets.mjs'
 import {
   bringAppWindowToFront,
@@ -43,6 +41,7 @@ import {
   themerConfigDir,
   waitForInstanceExit,
 } from './lib/launcher.mjs'
+import { captureDesktopPng, forceWindowVisible, scanOsWindows } from './lib/win.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -427,18 +426,41 @@ const server = http.createServer(async (req, res) => {
       } else {
         traceLog(trace, 'Could not probe the window state.')
       }
-      // OS-level activation as a second net: bring the window to the foreground
-      // (AppActivate accepts a PID; the main Freebuff window owns it).
+      // OS-level ground truth: the renderer cannot tell us whether the window
+      // is behind everything, minimized, or on another virtual desktop — the
+      // OS can. Scan the real windows, log the Freebuff one, force it visible.
       if (process.platform === 'win32') {
-        const snap = await processSnapshot()
-        const winPid = snap.windows[0]?.pid
-        if (winPid) {
-          execFile(
-            'powershell',
-            ['-NoProfile', '-Command', `$w = New-Object -ComObject WScript.Shell; $w.AppActivate(${winPid})`],
-            () => {},
+        const osScan = await scanOsWindows()
+        if (osScan) {
+          const fg = osScan.windows.find((w) => w.fg)
+          traceLog(
+            trace,
+            `OS scan: ${osScan.windows.length} top-level windows, foreground desk=${osScan.fgDesk}${fg ? ` (${(fg.title || '').slice(0, 40)})` : ''}`,
           )
-          traceLog(trace, `Sent AppActivate to Freebuff window PID ${winPid}.`)
+          const fb = osScan.windows.filter(
+            (w) => /freebuff desktop/i.test(w.title || '') || (/freebuff/i.test(w.title || '') && w.vis && !w.min),
+          )
+          for (const w of fb.slice(0, 6)) {
+            const sameDesk = osScan.fgDesk == null || w.desk === osScan.fgDesk
+            traceLog(
+              trace,
+              `OS Freebuff window z=${w.z} pid=${w.pid} minimized=${w.min} rect=${w.rect} desk=${w.desk}${sameDesk ? '' : ' *** ON A DIFFERENT VIRTUAL DESKTOP ***'}`,
+            )
+          }
+          const main = fb.find((w) => !w.min) || fb[0]
+          if (main) {
+            const forced = await forceWindowVisible(main.hwnd)
+            traceLog(trace, `Force visible (hwnd ${main.hwnd}): ${JSON.stringify(forced)}`)
+          }
+        }
+        // Screenshot of the primary screen for the record — the definitive
+        // answer to "is the window really there or not".
+        try {
+          const shotPath = path.join(themerConfigDir(), 'launch-screenshot.png')
+          const saved = await captureDesktopPng(shotPath)
+          if (saved) traceLog(trace, `Desktop screenshot saved: ${shotPath}`)
+        } catch {
+          /* best-effort */
         }
       }
       await finishTrace(trace, 'ok', 'App window detected and brought into view.')
@@ -467,7 +489,18 @@ const server = http.createServer(async (req, res) => {
       diagnostics: diag,
       lastTrace: tracePayload(lastLaunchTrace),
       debugPort: config.debugPort ?? null,
+      hasScreenshot: fs.existsSync(path.join(themerConfigDir(), 'launch-screenshot.png')),
     })
+  }
+
+  if (p === '/api/screenshot' && req.method === 'GET') {
+    const file = path.join(themerConfigDir(), 'launch-screenshot.png')
+    if (fs.existsSync(file)) {
+      res.writeHead(200, { 'content-type': 'image/png' })
+      return res.end(fs.readFileSync(file))
+    }
+    res.writeHead(404)
+    return res.end()
   }
 
   if (p === '/api/cleanup' && req.method === 'POST') {

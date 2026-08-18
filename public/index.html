@@ -243,6 +243,7 @@
   <details class="diag" id="diagPanel" style="display:none">
     <summary>What happened (diagnostics)</summary>
     <pre id="diagBody"></pre>
+    <img id="diagShot" alt="Desktop at launch time" style="display:none;margin-top:10px;max-width:100%;border:1px solid var(--border);border-radius:6px" />
   </details>
 
   <section>
@@ -394,6 +395,14 @@
       parts.push(r.diagnostics.lines.join('\n'))
     }
     body.textContent = parts.length ? parts.join('\n') : 'No diagnostic data collected.'
+    // Show the desktop screenshot taken right after the launch, if there is one.
+    const shot = $('diagShot')
+    if (shot) {
+      shot.style.display = 'none'
+      const img = new Image()
+      img.onload = () => { shot.src = img.src; shot.style.display = 'block' }
+      img.src = '/api/screenshot?' + Date.now()
+    }
     panel.style.display = ''
   }
 
