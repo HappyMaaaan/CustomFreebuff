@@ -57,6 +57,54 @@ Desktop itself — so you usually do not need to install anything extra.
 The studio page and the themes are inlined into the executable, so the file
 works on its own, anywhere.
 
+## Code signing & SmartScreen
+
+The release exe is **not code-signed**, so Windows SmartScreen shows
+*"Windows protected your PC"* the first time. That warning is normal for an
+unsigned exe downloaded from the internet — it is not a virus alert, and
+clicking **More info → Run anyway** is safe.
+
+Removing the warning needs two things, and there is no shortcut:
+
+1. **A code-signing certificate from a trusted CA.** A self-made
+   (self-signed) certificate does *not* help — Windows does not trust it.
+2. **Download reputation.** Even with a valid certificate, SmartScreen can
+   keep warning for a while for a brand-new publisher, until enough people
+   download and run the exe without issues. Reputation builds on its own.
+
+### Getting a certificate
+
+- **Cheapest legit option:** [Azure Trusted Signing](https://learn.microsoft.com/en-us/azure/trusted-signing/)
+  (Microsoft's cloud signing, about $10/month for 5,000 signatures). Keys
+  stay in the cloud, no USB token needed, and it works in GitHub Actions.
+- **Classic option:** an OV/EV code-signing certificate from a CA (DigiCert,
+  Sectigo, SSL.com, Certum…), roughly $100–500/year. EV requires a hardware
+  token.
+- **Free for open source:** some CAs and programs (e.g. SignPath) offer free
+  signing for open-source projects.
+
+### Signing once you have a certificate
+
+Everything is already wired up. Locally, with a `.pfx` file:
+
+```bash
+# Windows
+export CODESIGN_PFX_PATH=/path/to/cert.pfx
+export CODESIGN_PFX_PASSWORD=its-password
+npm run sign
+```
+
+(`CODESIGN_PFX_BASE64` works too — the pfx as base64, handy for CI secrets.
+Or set `CODESIGN_THUMBPRINT` to use a certificate already installed in the
+Windows certificate store.) The script finds `signtool` from the Windows SDK,
+signs with SHA-256, adds an RFC3161 timestamp, and verifies the result.
+
+On GitHub, the **Build, sign & release** workflow (Actions tab, "Run
+workflow") builds the exe on a clean Windows machine and releases it. Add the
+certificate as repository secrets `CODESIGN_PFX_BASE64` and
+`CODESIGN_PFX_PASSWORD`, and the workflow signs automatically; without them
+it builds and releases unsigned.
+
 ### In the studio
 
 1. If Freebuff is already open, close it.

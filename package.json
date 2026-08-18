@@ -13,7 +13,8 @@
   },
   "scripts": {
     "start": "node themer.mjs",
-    "check": "node --check themer.mjs && node --check lib/cdp.mjs && node --check lib/launcher.mjs && echo OK",
-    "test": "node test/e2e.mjs && node test/watcher.mjs"
+    "check": "node --check themer.mjs && node --check lib/cdp.mjs && node --check lib/launcher.mjs && node --check lib/win.mjs && node --check scripts/sign-exe.mjs && echo OK",
+    "test": "node test/e2e.mjs && node test/watcher.mjs",
+    "sign": "node scripts/sign-exe.mjs"
   }
 }
