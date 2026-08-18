@@ -19,11 +19,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { execFile } from 'node:child_process'
+
 import { loadAssets } from './lib/assets.mjs'
 import {
+  bringAppWindowToFront,
   findFreePort,
   listTargets,
   isAppPageTarget,
+  probeAppWindowState,
   themeTarget,
   waitForAppWindow,
   watchAndTheme,
@@ -412,7 +416,32 @@ const server = http.createServer(async (req, res) => {
     })
     if (started) {
       traceLog(trace, 'App window detected — launch successful.')
-      await finishTrace(trace, 'ok', 'App window detected.')
+      // Ground truth on the real window: is it visible, on-screen, sized right?
+      const probe = await probeAppWindowState(config.debugPort)
+      if (probe) {
+        traceLog(trace, `Window state: ${JSON.stringify(probe)}`)
+        // A window opened by a background process can land BEHIND the studio's
+        // browser/terminal (Windows foreground lock) — bring it into view.
+        const fix = await bringAppWindowToFront(config.debugPort)
+        if (fix) traceLog(trace, `Window brought into view: ${JSON.stringify(fix)}`)
+      } else {
+        traceLog(trace, 'Could not probe the window state.')
+      }
+      // OS-level activation as a second net: bring the window to the foreground
+      // (AppActivate accepts a PID; the main Freebuff window owns it).
+      if (process.platform === 'win32') {
+        const snap = await processSnapshot()
+        const winPid = snap.windows[0]?.pid
+        if (winPid) {
+          execFile(
+            'powershell',
+            ['-NoProfile', '-Command', `$w = New-Object -ComObject WScript.Shell; $w.AppActivate(${winPid})`],
+            () => {},
+          )
+          traceLog(trace, `Sent AppActivate to Freebuff window PID ${winPid}.`)
+        }
+      }
+      await finishTrace(trace, 'ok', 'App window detected and brought into view.')
       return sendJson(res, 200, { ok: true, debugPort: config.debugPort, started: true, trace: tracePayload(trace) })
     }
     // No window within the budget: collect everything the app left behind so
