@@ -146,7 +146,7 @@ async function serveMock(port, targetProvider) {
     return id
   }
   const injectCss = async (css, scheme) => {
-    if (targetProvider) await targetProvider((wsUrl) => themeTarget(wsUrl, css, scheme, () => {}))
+    if (targetProvider) await targetProvider((wsUrl) => themeTarget(wsUrl, css, scheme, () => {}).catch(() => {}))
   }
 
   const server = http.createServer((req, res) => {
@@ -243,6 +243,9 @@ async function serveMock(port, targetProvider) {
         let shape = theme.shape ?? {}
         let shadow = theme.shadow ?? {}
         let effects = theme.effects ?? {}
+        let motion = theme.motion ?? {}
+        let extraCss = theme.extraCss ?? ''
+        let cssScope = theme.cssScope ?? 'app'
         if (!theme.builtin) {
           const base = themeById(theme.base) ?? themeById('default')
           tokens = base?.tokens ?? DEFAULT_TOKENS
@@ -250,8 +253,11 @@ async function serveMock(port, targetProvider) {
           shape = base?.shape ?? {}
           shadow = base?.shadow ?? {}
           effects = base?.effects ?? {}
+          motion = base?.motion ?? {}
+          extraCss = base?.extraCss ?? ''
+          cssScope = base?.cssScope ?? 'app'
         }
-        const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects })
+        const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects, motion, extraCss, cssScope })
         if (!theme.builtin) state.userThemes.set(reset.id, reset)
         send(200, { ok: true, theme: { ...reset, builtin: theme.builtin } })
       } else if (url.pathname === '/api/restore' && req.method === 'POST') {
@@ -806,6 +812,441 @@ async function main() {
       return t && t.effects && t.effects.enabled === false ? t : null
     })
     check('Reset persiste la disparition des effets', Boolean(fxResetStored), JSON.stringify(fxResetStored?.effects))
+
+    /* ------------------------------------------------------------ */
+    /* VS6 — motion engine                                          */
+    /* ------------------------------------------------------------ */
+
+    // L'éditeur est resté ouvert sur dracula-custom (reset VS5).
+    const motionPresets = await evalOn(client, `${SHADOW}.querySelectorAll('#fbt-motion-presets .fbt-preset').length`)
+    check('la section Motion liste les 4 presets', motionPresets === 4, String(motionPresets))
+    const noMotion = await evalOn(client, `(() => {
+      const t = getComputedStyle(document.getElementById('demo-btn')).transition;
+      return t.includes('transform');
+    })()`)
+    check('au départ : aucun motion (pas de transition)', noMotion === false)
+
+    // 32. DoD — Smooth : le preset change réellement le comportement animé.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-motion-presets [data-preset="smooth"]').click()`)
+    const motionApplied = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transition`)
+      return t.includes('transform') && t.includes('0.2s') ? t : null
+    })
+    check('Smooth → transition transform 200ms sur le bouton', Boolean(motionApplied), motionApplied)
+
+    // Vrai survol via CDP → le bouton se transforme (translateY + scale).
+    const btnRect = await evalOn(client, `(() => {
+      const r = document.getElementById('demo-btn').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: btnRect.x, y: btnRect.y })
+    const hoverTransform = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transform`)
+      return t === 'matrix(1.02, 0, 0, 1.02, 0, -2)' ? t : null
+    })
+    check('survolé : le bouton glisse et grossit (translateY -2, scale 1.02)', hoverTransform === 'matrix(1.02, 0, 0, 1.02, 0, -2)', hoverTransform)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+    const backTransform = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transform`)
+      return t === 'none' ? t : null
+    })
+    check('hors survol : le bouton revient à la normale', backTransform === 'none', backTransform)
+
+    // L'aperçu dans le panneau suit les valeurs (Hover Button → Preview).
+    const previewTransition = await evalOn(client, `${SHADOW}.getElementById('fbt-motion-preview').style.transition`)
+    check('le bouton de preview suit la durée et l\u2019easing', /transform 200ms ease-out/.test(previewTransition || ''), previewTransition)
+
+    // 33. Enter : un nouveau message s\u2019anime à son apparition.
+    await evalOn(client, `(() => {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.textContent = 'hello';
+      document.body.appendChild(b);
+      return b.className;
+    })()`)
+    const enterName = await evalOn(client, `getComputedStyle(document.querySelector('.bubble')).animationName`)
+    check('les nouveaux messages s\u2019animent (fbt-enter)', enterName === 'fbt-enter', enterName)
+
+    // 34. Sauvegarde → le thème stocke le motion ; Reset → retour à minimal.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const savedMotion = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.motion && t.motion.duration === 200 && t.motion.hover.translateY === -2 ? t : null
+    })
+    check('Enregistrer stocke le motion (smooth)', Boolean(savedMotion), JSON.stringify(savedMotion?.motion))
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+    await evalOn(client, `${SHADOW}.getElementById('fbt-reset').click()`)
+    const motionReset = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transition`)
+      return !t.includes('transform') ? t : null
+    })
+    check('Reset retire le motion (plus de transition)', Boolean(motionReset), motionReset)
+    const motionResetStored = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.motion && t.motion.duration === 0 ? t : null
+    })
+    check('Reset persiste le retour à minimal', Boolean(motionResetStored), JSON.stringify(motionResetStored?.motion))
+
+    /* ------------------------------------------------------------ */
+    /* VS7 — global motion (speed / intensity / reduced-motion)      */
+    /* ------------------------------------------------------------ */
+
+    // 35. VS7 DoD — a single setting makes the whole app faster: Smooth ×2.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-motion-presets [data-preset="smooth"]').click()`)
+    await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transition`)
+      return t.includes('transform') && t.includes('0.2s') ? t : null
+    })
+    await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-motion-speed');
+      s.value = '2';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+      return s.value;
+    })()`)
+    const fastTransition = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transition`)
+      return t.includes('0.4s') ? t : null
+    })
+    check('Speed ×2 → l\u2019app entière est 2× plus rapide (400ms)', Boolean(fastTransition), fastTransition)
+    const speedVal = await evalOn(client, `${SHADOW}.getElementById('fbt-motion-speed').nextElementSibling.textContent`)
+    check('le slider Speed affiche 2.0×', speedVal === '2.0\u00d7', speedVal)
+
+    // 36. Intensity — discreet (0) freezes the hover, dynamic (2) amplifies it.
+    await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-motion-intensity');
+      s.value = '0';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const btnRect2 = await evalOn(client, `(() => {
+      const r = document.getElementById('demo-btn').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: btnRect2.x, y: btnRect2.y })
+    const quietHover = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transform`)
+      return t === 'none' ? t : null
+    })
+    check('Intensity 0 → le survol ne bouge plus (discret)', quietHover === 'none', quietHover)
+    await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-motion-intensity');
+      s.value = '2';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const loudHover = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transform`)
+      return t === 'matrix(1.04, 0, 0, 1.04, 0, -4)' ? t : null
+    })
+    check('Intensity 2 → le survol est amplifié (dynamique)', loudHover === 'matrix(1.04, 0, 0, 1.04, 0, -4)', loudHover)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+
+    // 37. Reduced motion — the media query is injected, removed when toggled.
+    const reducedOn = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent.includes('prefers-reduced-motion')`)
+    check('reduced-motion : la media query est injectée par défaut', reducedOn === true)
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-motion-reduced');
+      t.checked = false;
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    const reducedOff = await waitFor(async () => {
+      const has = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent.includes('prefers-reduced-motion')`)
+      return has === false ? true : null
+    })
+    check('toggle off → la media query disparaît', Boolean(reducedOff))
+
+    // 38. Sauvegarde → le thème stocke le global ; Reset → défauts neutres.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const savedGlobal = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.motion && t.motion.global && t.motion.global.speed === 2 && t.motion.global.intensity === 2 && t.motion.global.reduced === 'off' ? t : null
+    })
+    check('Enregistrer stocke le global (speed 2, intensity 2, reduced off)', Boolean(savedGlobal), JSON.stringify(savedGlobal?.motion?.global))
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+    await evalOn(client, `${SHADOW}.getElementById('fbt-reset').click()`)
+    const globalReset = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.motion && t.motion.global && t.motion.global.speed === 1 && t.motion.global.intensity === 1 && t.motion.global.reduced === 'auto' ? t : null
+    })
+    check('Reset remet le global à la neutralité (1 / 1 / auto)', Boolean(globalReset), JSON.stringify(globalReset?.motion?.global))
+
+    /* ------------------------------------------------------------ */
+    /* VS8 — visual element inspector                               */
+    /* ------------------------------------------------------------ */
+
+    // 39. Pick mode: the editor offers "Edit Element", the hint appears.
+    const pickBtnBefore = await evalOn(client, `${SHADOW}.getElementById('fbt-pick').textContent`)
+    check('le bouton Edit Element est dans l\u2019éditeur', pickBtnBefore === '🎯 Edit Element', pickBtnBefore)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-pick').click()`)
+    const pickActive = await evalOn(client, `(() => {
+      const p = ${SHADOW}.getElementById('fbt-pick');
+      return p.classList.contains('active') && ${SHADOW}.getElementById('fbt-inspect-hint').hidden === false;
+    })()`)
+    check('le mode picking est actif (hint visible)', pickActive === true)
+
+    // Survol → le highlight suit l'élément candidat.
+    await evalOn(client, `document.getElementById('demo-btn').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }))`)
+    const hoverHighlight = await evalOn(client, `(() => {
+      const h = document.getElementById('fbt-inspector-highlight');
+      return { show: h.style.display === 'block', label: h.dataset.label };
+    })()`)
+    check('le survol du bouton affiche le highlight « Button »', hoverHighlight.show === true && hoverHighlight.label === 'Button', JSON.stringify(hoverHighlight))
+
+    // 40. VS8 DoD — cliquer sur CE bouton : le Theme Engine sait qu'il s'agit
+    //     du composant Button, l'inspecteur s'ouvre, le highlight reste épinglé.
+    await evalOn(client, `document.getElementById('demo-btn').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`)
+    const inspectorOpen = await evalOn(client, `(() => {
+      const v = ${SHADOW}.getElementById('fbt-inspector');
+      const title = ${SHADOW}.querySelector('#fbt-inspector .fbt-title');
+      const h = document.getElementById('fbt-inspector-highlight');
+      return { open: v.hidden === false, title: title.textContent, pinned: h.style.display === 'block', pickDone: ${SHADOW}.getElementById('fbt-pick').classList.contains('active') === false };
+    })()`)
+    check('clic → inspecteur « Button » ouvert, highlight épinglé', inspectorOpen.open === true && inspectorOpen.title === 'Button' && inspectorOpen.pinned === true && inspectorOpen.pickDone === true, JSON.stringify(inspectorOpen))
+
+    // 41. Modifier depuis l'inspecteur → preview live sur CE bouton, isolé.
+    await evalOn(client, `(() => {
+      const i = ${SHADOW}.querySelector('#fbt-inspector input[data-prop="background"]');
+      i.value = '#3366ff';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const inspBg = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(51, 102, 255)' ? bg : null
+    })
+    check('Background édité → CE bouton change en direct', inspBg === 'rgb(51, 102, 255)', inspBg)
+    const inspInputBg = await evalOn(client, `getComputedStyle(document.getElementById('demo-input')).backgroundColor`)
+    check('l\u2019input voisin n\u2019est pas touché (isolation)', inspInputBg === 'rgb(45, 47, 58)', inspInputBg)
+
+    // Shape → Radius, Effects → Glow (accent du thème).
+    await evalOn(client, `(() => {
+      const r = ${SHADOW}.querySelector('#fbt-inspector input[type="range"]');
+      r.value = '24';
+      r.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const inspRadius = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).borderRadius`)
+      return v === '24px' ? v : null
+    })
+    check('Radius édité → 24px sur le bouton', inspRadius === '24px', inspRadius)
+    await evalOn(client, `(() => {
+      const g = ${SHADOW}.querySelectorAll('#fbt-inspector input[type="range"]')[1];
+      g.value = '50';
+      g.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const inspGlow = await waitFor(async () => {
+      const s = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).boxShadow`)
+      return s.includes('rgba(80, 250, 123, 0.28)') ? s : null
+    })
+    check('Glow édité → halo accent sur le bouton', Boolean(inspGlow), inspGlow)
+
+    // Motion → Hover : l'inspecteur ouvre l'éditeur d'état Hover réel.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-inspector .fbt-inspect-row button').click()`)
+    const stateFromInspector = await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-state-detail');
+      return { open: s.hidden === false, title: ${SHADOW}.querySelector('#fbt-state-detail .fbt-title').textContent };
+    })()`)
+    check('Hover → l\u2019éditeur d\u2019état s\u2019ouvre (Button · Hover)', stateFromInspector.open === true && stateFromInspector.title === 'Button · Hover', JSON.stringify(stateFromInspector))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-state-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+
+    // 42. Pick another : cliquer un input → inspecteur « Input ».
+    await evalOn(client, `${SHADOW}.getElementById('fbt-pick').click()`)
+    await evalOn(client, `document.getElementById('demo-input').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`)
+    const inputInspector = await evalOn(client, `(() => {
+      const v = ${SHADOW}.getElementById('fbt-inspector');
+      const title = ${SHADOW}.querySelector('#fbt-inspector .fbt-title');
+      return { open: v.hidden === false, title: title.textContent };
+    })()`)
+    check('un clic sur l\u2019input → inspecteur « Input »', inputInspector.open === true && inputInspector.title === 'Input', JSON.stringify(inputInspector))
+
+    // 43. Protection : les éléments sensibles (le panneau lui-même) ne sont
+    //     jamais interceptés ni thématisés.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-inspector-pick').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-pick').click()`)
+    const protectedPanel = await evalOn(client, `(() => {
+      const v = ${SHADOW}.getElementById('fbt-inspector');
+      const hint = ${SHADOW}.getElementById('fbt-inspect-hint');
+      return { inspectorStillClosed: v.hidden === true, stillPicking: hint.hidden === false };
+    })()`)
+    check('un clic dans le panneau n\u2019est pas intercepté', protectedPanel.inspectorStillClosed === true && protectedPanel.stillPicking === true, JSON.stringify(protectedPanel))
+    await evalOn(client, `document.querySelector('h1').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`)
+    const nonThemeable = await evalOn(client, `(() => {
+      const v = ${SHADOW}.getElementById('fbt-inspector');
+      const toast = ${SHADOW}.querySelector('.fbt-toast');
+      return { inspectorClosed: v.hidden === true, toastShown: toast.classList.contains('show') };
+    })()`)
+    check('un élément non thématisable → toast, pas d\u2019inspecteur', nonThemeable.inspectorClosed === true && nonThemeable.toastShown === true, JSON.stringify(nonThemeable))
+
+    // 44. Reset du composant depuis l'inspecteur → retour au look de base.
+    await evalOn(client, `document.getElementById('demo-input').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`)
+    await evalOn(client, `(() => {
+      const i = ${SHADOW}.querySelector('#fbt-inspector input[data-prop="background"]');
+      i.value = '#ffaa00';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const inputChanged = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-input')).backgroundColor`)
+      return bg === 'rgb(255, 170, 0)' ? bg : null
+    })
+    check('input édité → preview live isolée du bouton', inputChanged === 'rgb(255, 170, 0)', inputChanged)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-inspector-reset').click()`)
+    const inputReset = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-input')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('Reset → l\u2019input revient à sa base', inputReset === 'rgb(45, 47, 58)', inputReset)
+
+    // 45. Sauvegarde : le composant inspecté est stocké (button only).
+    await evalOn(client, `${SHADOW}.getElementById('fbt-inspector-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const inspSavedComp = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      const b = t?.components?.button
+      return t && b && b.background === '#3366ff' && b.radius === 24 && b.glow === 0.5 && !t.components.input ? t : null
+    })
+    check('Enregistrer stocke le composant inspecté (button, pas input)', Boolean(inspSavedComp), JSON.stringify(inspSavedComp?.components))
+
+    /* ------------------------------------------------------------ */
+    /* VS9 — Advanced CSS                                           */
+    /* ------------------------------------------------------------ */
+
+    // 46. The editor offers an Advanced entry; it opens the CSS editor.
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false ? true : null
+    })
+    const advEntry = await evalOn(client, `(() => {
+      const b = ${SHADOW}.getElementById('fbt-advanced');
+      return { label: b.querySelector('.fbt-comp-name').textContent, summary: b.querySelector('.fbt-comp-summary').textContent };
+    })()`)
+    check('la section Advanced est dans l\u2019éditeur', advEntry.label === 'Custom CSS' && advEntry.summary.includes('Tokens'), JSON.stringify(advEntry))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-advanced').click()`)
+    const advOpen = await evalOn(client, `(() => {
+      const v = ${SHADOW}.getElementById('fbt-adv');
+      return { open: v.hidden === false, title: ${SHADOW}.querySelector('#fbt-adv .fbt-title').textContent, tokens: ${SHADOW}.querySelectorAll('.fbt-token-chip').length };
+    })()`)
+    check('clic → la vue Advanced s\u2019ouvre avec la référence de tokens', advOpen.open === true && advOpen.title === 'Custom CSS' && advOpen.tokens >= 10, JSON.stringify(advOpen))
+
+    // A fixture element the custom CSS will target. Its base look lives in a
+    // page style with :where() (zero specificity) so the theme's custom CSS
+    // wins when active and the element reverts when it is scoped out/removed.
+    await evalOn(client, `(() => {
+      const st = document.createElement('style');
+      st.id = 'custom-css-fixture-style';
+      st.textContent = ':where(#custom-css-target) { background: rgb(255, 0, 0); width: 120px; height: 40px; }';
+      document.head.appendChild(st);
+      const d = document.createElement('div');
+      d.id = 'custom-css-target';
+      document.body.appendChild(d);
+    })()`)
+
+    // 47. VS9 DoD — CSS typed in the editor is injected live, and the theme
+    //     tokens (var(--theme-*)) are consumed by the app.
+    const customCss = '#custom-css-target {\n  background: var(--theme-surface);\n  border-radius: var(--theme-radius);\n  box-shadow: 0 0 0 2px var(--theme-accent);\n}'
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-adv-editor');
+      t.value = ${JSON.stringify(customCss)};
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const advApplied = await waitFor(async () => {
+      const s = await evalOn(client, `(() => {
+        const el = document.getElementById('custom-css-target');
+        const cs = getComputedStyle(el);
+        return { bg: cs.backgroundColor, shadow: cs.boxShadow };
+      })()`)
+      return s.bg === 'rgb(45, 47, 58)' && s.shadow.includes('rgb(80, 250, 123)') ? s : null
+    })
+    check('DoD : CSS écrit → injecté en direct (--theme-surface, --theme-accent)', Boolean(advApplied), JSON.stringify(advApplied))
+    const advHighlighted = await evalOn(client, `${SHADOW}.getElementById('fbt-adv-editor').value.length > 0 && ${SHADOW}.querySelector('.fbt-code-highlight').innerHTML.includes('fbt-tok-sel')`)
+    check('la syntaxe est surlignée (sélecteur coloré)', advHighlighted === true)
+    const advOk = await evalOn(client, `${SHADOW}.getElementById('fbt-adv-ok').hidden === false`)
+    check('« Valid CSS » affiché', advOk === true)
+
+    // 48. The tokens follow the theme: a radius change updates
+    //     var(--theme-radius) everywhere the custom CSS uses it.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await evalOn(client, `(() => {
+      const r = ${SHADOW}.getElementById('fbt-shape-radius');
+      r.value = '18';
+      r.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const advRadiusFollows = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.getElementById('custom-css-target')).borderRadius`)
+      return v === '18px' ? v : null
+    })
+    check('var(--theme-radius) suit le slider Shape', advRadiusFollows === '18px', advRadiusFollows)
+
+    // 49. Scope « surfaces » → every selector is prefixed, the element outside
+    //     the surfaces stops matching.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-advanced').click()`)
+    await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-adv-scope');
+      s.value = 'surfaces';
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    const scopedInjected = await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return sheet.includes('button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"] #custom-css-target') ? sheet : null
+    })
+    check('scope « surfaces » → les sélecteurs sont préfixés', Boolean(scopedInjected))
+    const scopedReverted = await evalOn(client, `getComputedStyle(document.getElementById('custom-css-target')).backgroundColor`)
+    check('l\u2019élément hors des surfaces n\u2019est plus touché', scopedReverted === 'rgb(255, 0, 0)', scopedReverted)
+
+    // 50. Invalid CSS → error reporting with the line number.
+    const badCss = '#custom-css-target {\n  color: red'
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-adv-editor');
+      t.value = ${JSON.stringify(badCss)};
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const advErrors = await waitFor(async () => {
+      const v = await evalOn(client, `(() => {
+        const e = ${SHADOW}.getElementById('fbt-adv-errors');
+        return { shown: e.hidden === false, text: e.textContent };
+      })()`)
+      return v.shown && v.text.includes('Line ') ? v : null
+    })
+    check('CSS invalide → erreurs affichées avec la ligne', Boolean(advErrors), JSON.stringify(advErrors))
+
+    // 51. Save stores extraCss + cssScope (sanitized); reopening restores the
+    //     text; Reset custom CSS removes it from the injection.
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-adv-editor');
+      t.value = '#custom-css-target { color: var(--theme-text); }';
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const advSaved = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.extraCss.includes('custom-css-target') && t.cssScope === 'surfaces' ? t : null
+    })
+    check('Enregistrer stocke extraCss + cssScope', Boolean(advSaved), JSON.stringify(advSaved?.extraCss))
+    // Reopen → the saved CSS is restored. The list refresh after save is
+    // async, so poll until the editor shows the value (the stale themesById
+    // is replaced by the fresh one on the next open).
+    const advRestored = await waitFor(async () => {
+      await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      if (hidden !== false) return null
+      await evalOn(client, `${SHADOW}.getElementById('fbt-advanced').click()`)
+      const v = await evalOn(client, `${SHADOW}.getElementById('fbt-adv-editor').value`)
+      return v && v.includes('custom-css-target') ? v : null
+    })
+    check('réouverture → le CSS est restauré dans l\u2019éditeur', Boolean(advRestored), String(advRestored))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-adv-reset').click()`)
+    const advResetApplied = await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return !sheet.includes('custom-css-target') ? true : null
+    })
+    check('Reset custom CSS → retiré de l\u2019injection', advResetApplied === true)
 
     client.close()
   } finally {

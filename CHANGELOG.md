@@ -3,6 +3,72 @@
 All notable changes to CustomFreebuff, one section per release. The release
 notes on GitHub are generated from this file.
 
+## v1.3.0 — 2026-08-19
+
+### Motion Engine 🎬
+
+- A new **Motion** section makes animations part of the theme: one base
+  duration, easing and delay for every surface of the app.
+- **Per-state transforms**: hover (lift + grow), press (shrink), focus —
+  real behavior, felt on every button of Freebuff.
+- **Enter animations**: new chat messages fade and slide in.
+- **4 presets** — Minimal, Smooth, Snappy, Bouncy — change the whole feel
+  of the app in one click, with a live hover/press preview inside the
+  editor.
+- **Minimal is the default**: activating a theme never silently adds motion
+  to the app.
+
+### Global Motion 🌍
+
+- **One Speed slider scales the whole app**: 0.25× to 3× on every duration —
+  transitions, presses and message entries all speed up or slow down together.
+- **One Intensity slider sets the personality**: 0 makes hover/press motion
+  disappear (discreet), 2 amplifies every transform (dynamic).
+- **Reduced motion built-in**: by default the theme respects the system's
+  `prefers-reduced-motion` setting and disables the animations it added;
+  the toggle lets you opt out.
+- The global scale survives preset changes and saves with the theme —
+  change the preset and the personality stays.
+
+### Element Inspector 🎯
+
+- **Pick any element in Freebuff**: a new **Edit Element** mode highlights
+  the element under your cursor and lets you click it — the engine maps it
+  to its theme component (Button, Input, Card, Sidebar or Modal) and opens
+  a focused inspector for it.
+- The inspector shows the element's **current look** — Appearance
+  (Background, Text, Border), Shape (Radius), Depth (Shadow), Effects
+  (Glow) and Motion (Hover, Press) — and every edit previews **live on the
+  real element**, with the same isolation as the component editor.
+- **New component Glow**: an accent-colored neon halo, scoped to the
+  component, combinable with its elevation shadow.
+- The highlight stays pinned on the selected element while you edit;
+  **Reset this component** undoes everything at once.
+- **Sensitive elements are protected**: the panel, the injection and
+  non-themeable parts of the app are never intercepted — a click there
+  just tells you nothing is themeable.
+
+### Advanced CSS 🛠
+
+- **Write your own CSS inside Freebuff**: an **Advanced** section in the
+  theme editor opens a code editor with **live syntax highlighting** — no
+  need to leave the app to go further than the graphical editor.
+- Your CSS is **injected into Freebuff in real time** as you type, appended
+  last so it wins over the built-in styles (add `!important` to override
+  the theme engine itself).
+- **Theme tokens as CSS variables**: the whole theme is exposed as
+  `var(--theme-surface)`, `var(--theme-accent)`, `var(--theme-radius)`, … —
+  reference them in your rules and they follow the theme automatically.
+- **Validation with error reporting**: unbalanced braces, unclosed strings,
+  `@import` and any `<` are flagged with the exact **line and column**
+  before they reach the app.
+- **Scoping**: rules apply to the whole app, or can be restricted to the
+  **themed surfaces only** (buttons, inputs, cards, sidebar, modal) — the
+  panel itself is never touchable, and everything is removed when the
+  theme is deactivated.
+- **Reset custom CSS** clears the editor and restores the generated theme
+  in one click.
+
 ## v1.2.0 — 2026-08-19
 
 ### Component states 🎯

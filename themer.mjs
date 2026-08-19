@@ -471,6 +471,9 @@ const server = http.createServer(async (req, res) => {
     let shape = theme.shape ?? {}
     let shadow = theme.shadow ?? {}
     let effects = theme.effects ?? {}
+    let motion = theme.motion ?? {}
+    let extraCss = theme.extraCss ?? ''
+    let cssScope = theme.cssScope ?? 'app'
     if (!builtin) {
       const base = themeById(theme.base) ?? themeById('default')
       tokens = base?.tokens ?? DEFAULT_TOKENS
@@ -478,8 +481,11 @@ const server = http.createServer(async (req, res) => {
       shape = base?.shape ?? {}
       shadow = base?.shadow ?? {}
       effects = base?.effects ?? {}
+      motion = base?.motion ?? {}
+      extraCss = base?.extraCss ?? ''
+      cssScope = base?.cssScope ?? 'app'
     }
-    const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects })
+    const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects, motion, extraCss, cssScope })
     if (!builtin) saveUserTheme(reset)
     return sendJson(res, 200, { ok: true, theme: { ...reset, builtin } })
   }
