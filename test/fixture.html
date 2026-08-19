@@ -28,10 +28,29 @@
     --brand: #368f06;
   }
   body { background: var(--bg); color: var(--text); font-family: sans-serif; }
+  /* Demo elements that consume the tokens — the VS1 DoD proof: one token
+     (accent) drives several coherent places (link, vars). */
+  #demo-panel { background: var(--surface); border: 1px solid var(--border); padding: 16px; border-radius: 8px; }
+  #demo-link { color: var(--brand); }
+  /* VS2 — one element per component, styled with the app's own tokens, so
+     component overrides are visible and isolated from each other. */
+  button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+  input, textarea, select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+  .card { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  aside.sidebar { background: var(--chrome); color: var(--text); padding: 10px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
 </style>
 </head>
 <body>
   <h1>fixture</h1>
+  <div id="demo-panel">
+    <button id="demo-btn">Demo button</button>
+    <input id="demo-input" placeholder="Type here" />
+    <a id="demo-link" href="#">Demo link</a>
+    <div class="card">Card</div>
+    <aside class="sidebar">Sidebar</aside>
+    <div class="modal" role="dialog">Modal</div>
+  </div>
   <script>
     // Imite l'API exposée par le preload de Freebuff.
     window.__nativeThemeCalls = []

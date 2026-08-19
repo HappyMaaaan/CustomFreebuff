@@ -1,6 +1,7 @@
 @echo off
+rem CustomFreebuff — launcher (source). Starts the themer with no visible
+rem console: only the little launcher window appears.
 setlocal
-title CustomFreebuff
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -11,11 +12,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Starting CustomFreebuff...
-echo Your browser will open the theme studio.
-echo Close this window to stop the studio.
-echo.
-node themer.mjs
-echo.
-echo The studio stopped.
-pause
+wscript //nologo "%~dp0start-hidden.vbs"
+exit /b 0

@@ -2,7 +2,7 @@
 
 A small theme studio for Freebuff Desktop. It changes the look of the app, nothing else.
 
-Freebuff Desktop ships with a dark interface and no way to pick your own colors. This tool adds that: pick a theme, or write your own CSS, and it is applied live to the running app.
+Freebuff Desktop ships with a dark interface and no way to pick your own colors. This tool adds that: pick a theme, edit it, or fine-tune individual components (buttons, inputs, cards…), and everything is applied live to the running app — from a small button inside Freebuff itself.
 
 ## What it does not do
 
@@ -23,12 +23,14 @@ Nothing else. The project uses only Node's built-in modules (`fetch`, `WebSocket
 ### Windows — standalone .exe (no Node needed)
 
 Double-click `CustomFreebuff.exe` from the `dist/` folder (or from a release).
-It is a self-contained executable: everything is bundled inside, nothing to
-install. Your browser opens the theme studio.
+It is a self-contained GUI executable: everything is bundled inside, nothing
+to install, and **no console window** — only the small launcher window appears
+(the Theme Engine opens in Freebuff itself).
 
 ### Windows — from source
 
-Double-click `start.bat` (requires Node.js).
+Double-click `start.bat` (requires Node.js). It launches the themer hidden (no
+console window), so only the launcher window is visible.
 
 ### macOS / Linux
 
@@ -105,25 +107,64 @@ certificate as repository secrets `CODESIGN_PFX_BASE64` and
 `CODESIGN_PFX_PASSWORD`, and the workflow signs automatically; without them
 it builds and releases unsigned.
 
-### In the studio
+### The launcher window (VS2.5)
 
-1. If Freebuff is already open, close it.
-2. Click **Launch Freebuff with theming**. Freebuff starts normally, with one extra: a local debug port (127.0.0.1 only) that the studio uses to inject the theme.
-3. Pick a theme. It applies instantly to every open window.
-4. To go back to the original look, click **Restore original look**.
+The standalone no longer shows a big studio page. Double-click the `.exe` (or
+run `npm start`) and a **tiny launcher window** opens (Chromium `--app=` mode:
+no tabs, no address bar) with essentially two buttons:
 
-The studio remembers your choice, so the next time you launch Freebuff from the studio, the same theme comes back automatically.
+- **🎯 Patch Freebuff (injection)** — the main button: starts Freebuff with
+  the local debug port and injects the Theme Engine. If Freebuff is already
+  running, the launcher shows a clear warning: *close Freebuff, then patch
+  again* (a live instance is never killed, because that could destroy an
+  active session).
+- **Nettoyer les processus restants** — appears only when leftover Freebuff
+  processes are detected.
 
-### Custom CSS
+All theme management happens **inside Freebuff** (the 🎨 Thèmes button), not
+in the launcher. The launcher remembers your choice, so the next time you
+patch Freebuff, the same theme comes back automatically.
 
-The app's whole UI is driven by CSS variables defined on `:root`. If you want your own colors, paste rules into the **Custom CSS** box and hit **Apply my CSS**. Example:
+### Theme Engine inside Freebuff (VS0 → VS2)
 
-```css
-:root {
-  --bg: #101014 !important;
-  --brand: #ffd166 !important;
-}
-```
+Once Freebuff is patched from the launcher, a small **🎨 Thèmes** button appears
+in the bottom-right corner of the app window — the first pieces of the future
+Theme Engine, usable directly inside Freebuff. Click it to open the in-app
+theme panel:
+
+- pick a theme → it is applied instantly and remembered locally,
+- **Modifier** opens the **Theme Editor** (VS1): the six design tokens
+  (Background, Surface, Text, Muted Text, Border, Accent) as color pickers,
+  with **live preview** — change Accent and every place driven by `--brand`
+  (buttons, links, active states) changes at once,
+- **Components** (VS2): the editor exposes **Button, Input, Card, Sidebar and
+  Modal**, each with **Colors, Border, Radius and Shadow**. Only the overridden
+  settings are stored — so customizing a Button never leaks into Inputs,
+  Cards or the rest of the app (component isolation),
+- **Enregistrer** saves the theme (editing a built-in theme never overwrites
+  it: it creates a derived *custom* theme and activates it),
+- **Reset** restores the base theme's tokens **and** components,
+- **Restaurer le look d'origine** removes the CSS everywhere,
+- the header shows the live status (injection active, studio offline, …).
+
+The panel lives in its own Shadow DOM and only talks to the local standalone
+API on `127.0.0.1` (loopback origins only) — it never touches the app's
+internals. If the app reloads or is relaunched, the theme and the panel come
+back automatically.
+
+> **VS0/VS1 scope note:** the entry point is a floating button, not yet a real
+> row inside Freebuff's own Settings page. Hooking the app's actual Settings
+> DOM is deliberately out of scope until the app's DOM structure is known — a
+> risk already flagged in the PRD.
+
+### Component colors map to the real app
+
+The app's whole UI is driven by CSS variables defined on `:root`, and the
+component editor targets the variables Freebuff actually uses — verified on
+the real app DOM: buttons draw their background from the *surface* family
+(`--surface` / `--surface-2` / `--raised`), text colors from
+`--text` / `--muted` / `--faint`, and so on. That is why changing a component's
+color visibly changes the real buttons, inputs and cards of the app.
 
 ## How it works
 
@@ -139,11 +180,29 @@ Freebuff Desktop is an Electron app. Its window shows a local web page, and ever
 }
 ```
 
-The studio does three things:
+**A theme is data, not CSS (VS1).** Each theme is a set of *design tokens*
+(background, surface, text, muted text, border, accent). The studio *generates*
+the stylesheet from those tokens: `accent → --brand, --brand-dim, --ok, …`,
+`surface → --surface, --surface-2, --raised`, and so on. That is why changing
+one token changes several coherent places in Freebuff at once. User themes are
+stored as JSON files in the studio's own config directory
+(`%APPDATA%\freebuff-themer\themes\` on Windows) — never in Freebuff's files.
+
+**Components override tokens locally (VS2).** A theme can carry a `components`
+section — `button`, `input`, `card`, `sidebar`, `modal` — each able to override
+Colors, Border, Radius and Shadow *within that component only* (the generator
+emits scoped rules such as `button{--surface:…;border-radius:…}`). Only the
+overridden settings are stored, so everything else keeps inheriting the global
+tokens. Component selectors are generic on purpose (component theming = all
+instances stay consistent); they live in one constant in
+`lib/theme-model.mjs` to be refined once the real Freebuff DOM is known.
+
+The standalone does four things:
 
 1. **Launch** — it starts Freebuff with `--remote-debugging-port=<port>`, a standard Chromium switch (the same mechanism as DevTools). The port only listens on `127.0.0.1`.
 2. **Inject CSS** — over the DevTools protocol, it adds a `<style>` element to the app's page, exactly like a browser extension. The theme is re-applied whenever a window opens or the page reloads.
-3. **Native window color** — the title bar color follows the app's own theme API (`window.freebuffDesktop.setTheme`), i.e. the built-in dark/light setting.
+3. **Theme Engine panel (VS0)** — it injects a small *Thèmes* button + panel into the app window, so themes can be activated from inside Freebuff itself. The panel is self-contained (Shadow DOM) and talks back to the studio over the local API.
+4. **Native window color** — the title bar color follows the app's own theme API (`window.freebuffDesktop.setTheme`), i.e. the built-in dark/light setting.
 
 ## Why this is safe
 
@@ -158,13 +217,13 @@ Honest caveat: this is a third-party tool, use at your own risk. It is designed 
 
 ## Troubleshooting
 
-- **"Freebuff is already open"** — click **Launch** once more. The studio now waits a few seconds for a closing instance to fully exit before giving up. If it still refuses, a window really is open: close it, or use **Clean up leftover Freebuff processes**. Electron's single-instance lock ignores new command-line arguments while an instance runs.
+- **"Freebuff is already open"** — click **Patch Freebuff** once more. The launcher waits a few seconds for a closing instance to fully exit before giving up. If it still refuses, a window really is open: close it (the app is never killed automatically), or use **Nettoyer les processus restants**. Electron's single-instance lock ignores new command-line arguments while an instance runs.
 - **Freebuff processes stay in Task Manager without a window** — that is leftover helper processes from a previous session (GPU/utility) or an orphaned orchestrator (`bun.exe` from the Freebuff folder). They block a new launch. The studio detects both and cleans them up automatically when you click **Launch**, or you can use the **Clean up leftover Freebuff processes** button.
-- **Freebuff runs but no window is visible** — this happened in an early release because the studio spawned Freebuff with Windows' `SW_HIDE` startup flag, so the OS created the app's window hidden (it existed, the theme applied, but nothing showed on screen). That flag is gone: the window is now created visible, exactly like launching Freebuff normally. On top of that, the studio still detects the window by its *process* (`Freebuff.exe`), brings it to the front if another window covers it, and logs its real OS state (visible or not, position, size) in the diagnostics panel.
-- **Launching shows "no window appeared"** — open the **What happened (diagnostics)** panel below the buttons: it lists every step of the launch, what processes were found, whether the debug port came up, the window's real state, and what Freebuff's own logs say. Every launch is also written to `%APPDATA%\freebuff-themer\launch-trace.log` (macOS/Linux: `~/.config/freebuff-themer/`). Paste that content if you need help.
-- **"Freebuff is running without the debug port"** — it was started some other way. Close it and relaunch from the studio.
-- **The theme disappeared after an app update** — the app reloaded its page without the studio attached. Reopen the studio and launch Freebuff from it again.
-- **Freebuff not found** — set the path to `Freebuff.exe` (Windows) or `Freebuff` (macOS/Linux) in the studio, or use the `FREEBUFF_EXE` environment variable.
+- **Freebuff runs but no window is visible** — this happened in an early release because the launcher spawned Freebuff with Windows' `SW_HIDE` startup flag, so the OS created the app's window hidden (it existed, the theme applied, but nothing showed on screen). That flag is gone: the window is now created visible, exactly like launching Freebuff normally.
+- **Launching shows "no window appeared"** — every launch is traced to `%APPDATA%\freebuff-themer\launch-trace.log` (macOS/Linux: `~/.config/freebuff-themer/`): every step, the processes found, whether the debug port came up, and the window's real OS state. Paste that content if you need help.
+- **"Freebuff is running without the debug port"** — it was started some other way. Close it and relaunch from the launcher.
+- **The theme disappeared after an app update** — the app reloaded its page without the launcher attached. Reopen the launcher and patch Freebuff from it again.
+- **Freebuff not found** — set the `FREEBUFF_EXE` environment variable to the path of `Freebuff.exe` (Windows) or `Freebuff` (macOS/Linux).
 
 ## Development
 
@@ -173,7 +232,12 @@ npm run check   # syntax check
 npm test        # end-to-end CDP tests (needs Edge or Chrome on the machine)
 ```
 
-The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, and automatic theming of newly opened windows.
+**How to test everything end-to-end (VS0 + VS1), with the .exe or from the
+source: see [TESTING.md](TESTING.md).** It walks through the in-app Theme
+Engine, the token editor and its live preview, persistence, disconnection,
+and how to rebuild the executable.
+
+The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, automatic theming of newly opened windows, the in-app Theme Engine panel (activate → visual change → restore, edit a token → several coherent places change → save → reset, customize a Button → it changes while Input/Card are untouched → save → reset), disconnection detection, and the token/component→CSS generator (unit).
 
 ## Project layout
 
@@ -182,12 +246,16 @@ start.bat / start.sh   # launchers (require Node.js)
 themer.mjs             # local server + API + orchestration
 lib/assets.mjs         # asset loading (embedded in the exe / disk in dev)
 lib/cdp.mjs            # minimal CDP client + CSS injection
+lib/theme-model.mjs    # theme model: tokens + components → generated CSS (VS1/VS2)
+lib/theme-store.mjs    # user-theme persistence (VS1)
+lib/themeui.mjs        # in-app Theme Engine panel + editor injected into Freebuff
 lib/launcher.mjs       # Freebuff discovery and launch
-public/index.html      # the studio (single page, no build step)
-themes/*.json          # built-in themes
-scripts/build-exe.mjs  # builds the standalone .exe (Bun --compile)scripts/build-embed.mjs
+public/index.html      # the small launcher window (single page, no build step)
+themes/*.json          # built-in themes (tokens)
+scripts/build-exe.mjs  # builds the standalone .exe (Bun --compile)
+scripts/build-embed.mjs
 scripts/make-icon.mjs
-test/                  # e2e tests (headless Edge/Chrome)
+test/                  # unit + e2e tests (headless Edge/Chrome)
 ```
 
 Not affiliated with Freebuff, Inc.

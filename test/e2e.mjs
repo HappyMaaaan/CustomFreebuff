@@ -17,6 +17,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { findFreePort, listTargets, isAppPageTarget, themeTarget, CdpClient } from '../lib/cdp.mjs'
+import { killEdgeByProfile } from './kill-edge.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const EDGE_CANDIDATES = [
@@ -161,7 +162,11 @@ async function main() {
 
     themedClient.close()
   } finally {
-    child.kill()
+    try { child.kill() } catch { /* déjà mort */ }
+    // Sur Windows, Edge se relance seul : child.kill() ne touche pas le vrai
+    // navigateur. On le termine par son profil, sinon il garde le port debug
+    // et fait traîner le processus de test.
+    await killEdgeByProfile(profile)
     server.close()
     // Edge peut mettre un instant à libérer le profil — on retente, sans bloquer.
     for (let i = 0; i < 5; i++) {

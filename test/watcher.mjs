@@ -14,6 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { listTargets, isAppPageTarget, watchAndTheme, CdpClient } from '../lib/cdp.mjs'
+import { killEdgeByProfile } from './kill-edge.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const EDGE_CANDIDATES = [
@@ -119,9 +120,25 @@ async function main() {
       return null
     })()
     check('la 2e fenêtre est thématisée aussi', second === '#123456', String(second))
+
+    // 3. Déconnexion : quand l'app ferme, le watcher le détecte (0 fenêtre
+    // stylée) — la base de la « détection de déconnexion » de VS0.
+    // Sur Windows, Edge se relance seul (child.kill() ne touche pas le vrai
+    // navigateur) : on termine le vrai navigateur par son profil.
+    await killEdgeByProfile(profile)
+    const dropped = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        if (watcher.connectedCount === 0) return true
+        await sleep(250)
+      }
+      return false
+    })()
+    check('la déconnexion de l\u2019app est détectée (0 fenêtre stylée)', dropped)
   } finally {
     watcher.stop()
-    child.kill()
+    try { child.kill() } catch { /* déjà tué */ }
+    // Sur Windows, Edge se relance seul — terminer le vrai navigateur par profil.
+    await killEdgeByProfile(profile)
     server.close()
     for (let i = 0; i < 5; i++) {
       try { fs.rmSync(profile, { recursive: true, force: true }); break } catch { await sleep(300) }

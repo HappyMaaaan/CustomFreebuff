@@ -19,7 +19,7 @@ const themes = []
 for (const file of fs.readdirSync(path.join(ROOT, 'themes'))) {
   if (!file.endsWith('.json')) continue
   const theme = JSON.parse(fs.readFileSync(path.join(ROOT, 'themes', file), 'utf8'))
-  if (theme && theme.id && theme.colors) themes.push(theme)
+  if (theme && theme.id && theme.tokens) themes.push(theme)
 }
 themes.sort((a, b) => (a.id < b.id ? -1 : 1))
 

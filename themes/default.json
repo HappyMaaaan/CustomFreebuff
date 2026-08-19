@@ -1,0 +1,16 @@
+{
+  "id": "default",
+  "name": "Default",
+  "description": "Freebuff's original look — the base every theme derives from.",
+  "colorScheme": "dark",
+  "base": "default",
+  "tokens": {
+    "background": "#0e0e0e",
+    "surface": "#151517",
+    "text": "#e7e7e8",
+    "textMuted": "#9a9aa0",
+    "border": "#2a2a2e",
+    "accent": "#7cff3f"
+  },
+  "extraCss": ""
+}

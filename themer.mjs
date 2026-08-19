@@ -20,6 +20,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadAssets } from './lib/assets.mjs'
+import { DEFAULT_TOKENS, normalizeTheme, themeToCss } from './lib/theme-model.mjs'
+import { listUserThemes, readUserTheme, saveUserTheme } from './lib/theme-store.mjs'
 import {
   bringAppWindowToFront,
   findFreePort,
@@ -77,27 +79,42 @@ function saveConfig(config) {
 let config = loadConfig()
 
 /* ------------------------------------------------------------------ */
-/* Built-in themes.                                                    */
+/* Themes: the model (VS1). Built-in themes ship with the project;     */
+/* user themes live in our config directory. The CSS injected into      */
+/* Freebuff is GENERATED from the theme's tokens (lib/theme-model.mjs)  */
+/* — never a hand-written rule set.                                     */
 /* ------------------------------------------------------------------ */
 
 const THEMES = assets.themes
 
 function themeById(id) {
-  return THEMES.find((t) => t.id === id) ?? null
+  return readUserTheme(id) ?? THEMES.find((t) => t.id === id) ?? null
 }
 
-/** Turns a theme (JSON) into a stylesheet. */
-export function themeToCss(theme) {
-  const parts = [`color-scheme: ${theme.colorScheme} !important`]
-  for (const [key, value] of Object.entries(theme.colors)) {
-    parts.push(`${key}: ${value} !important`)
-  }
-  let css = `:root{${parts.join(';')}}`
-  if (theme.extraCss) css += `\n${theme.extraCss}`
-  return css
+function allThemes() {
+  return [
+    ...THEMES.map((t) => ({ ...t, builtin: true })),
+    ...listUserThemes().map((t) => ({ ...t, builtin: false })),
+  ]
 }
 
-/** The effective CSS to apply (built-in theme OR custom CSS). */
+/** A readable, unique id for a new user theme (never overwrites an existing one). */
+function uniqueThemeId(name) {
+  const base =
+    String(name)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'theme'
+  let id = base
+  let n = 2
+  while (themeById(id)) id = `${base}-${n++}`
+  return id
+}
+
+/** The effective CSS to apply (built-in/user theme OR custom CSS). */
 function effectiveCss() {
   if (config.mode === 'custom' && config.customCss) return config.customCss
   const theme = themeById(config.themeId)
@@ -122,32 +139,45 @@ let watcher = null
 let lastCss = null
 let lastScheme = null
 let lastConnectCount = 0
+// Non-empty while a live preview (VS1) is applied but not yet saved.
+let lastPreviewCss = null
 
 function log(msg) {
   console.log(`[customfreebuff] ${msg}`)
 }
 
-function restartWatcher() {
+function restartWatcher(cssOverride = null) {
   if (watcher) {
     watcher.stop()
     watcher = null
   }
   lastConnectCount = 0
-  const css = effectiveCss()
-  const scheme = effectiveColorScheme()
+  // The watcher runs as soon as a debug port is known (even with no active
+  // theme): it keeps the Theme Engine panel alive in Freebuff and re-injects
+  // automatically after reloads / restarts. An empty css removes any leftover
+  // style — exactly the "retrait de l'injection" behavior.
+  // `cssOverride` carries a transient live-preview (VS1): applied to the
+  // windows but never persisted — the next apply/save/restore clears it.
+  const css = cssOverride ?? effectiveCss() ?? ''
+  const scheme = cssOverride ? null : effectiveColorScheme()
   lastCss = css
   lastScheme = scheme
-  if (!css || !config.debugPort) return
+  if (!config.debugPort) return
   watcher = watchAndTheme({
     debugPort: config.debugPort,
     css,
     colorScheme: scheme,
+    themeUiPort: serverPort,
     onStatus: (n) => {
       lastConnectCount = n
     },
     log,
   })
-  log(`Applying theme live (debug port ${config.debugPort}).`)
+  log(
+    css
+      ? `Applying theme live (debug port ${config.debugPort}).`
+      : `Theme Engine active (debug port ${config.debugPort}) — no theme applied.`,
+  )
 }
 
 /** Applies once to windows already open (used by "restore"). */
@@ -159,7 +189,7 @@ async function applyOnceToOpenTargets(css, colorScheme) {
     for (const target of targets) {
       if (!isAppPageTarget(target, null)) continue
       try {
-        const client = await themeTarget(target.webSocketDebuggerUrl, css, colorScheme, log)
+        const client = await themeTarget(target.webSocketDebuggerUrl, css, colorScheme, log, serverPort)
         client.close()
         applied++
       } catch {
@@ -238,12 +268,16 @@ async function statePayload() {
     nativePref: readNativeThemePref(),
     lastTrace: tracePayload(lastLaunchTrace),
     appVersion: null,
-    themes: THEMES.map((t) => ({
+    previewing: Boolean(lastPreviewCss),
+    themes: allThemes().map((t) => ({
       id: t.id,
       name: t.name,
       description: t.description,
       colorScheme: t.colorScheme,
-      colors: t.colors,
+      base: t.base,
+      tokens: t.tokens,
+      components: t.components,
+      builtin: Boolean(t.builtin),
     })),
   }
 }
@@ -319,6 +353,33 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`)
   const p = url.pathname
 
+  // CORS for the Theme Engine panel injected inside Freebuff (VS0): the app
+  // page lives on another loopback origin and calls our /api/* endpoints.
+  // Only loopback origins are allowed through, so a random website cannot
+  // call the local API (DNS-rebinding / CSRF protection).
+  const origin = req.headers.origin
+  let corsOrigin = null
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname.toLowerCase()
+      if (host === 'localhost' || host === '127.0.0.1' || host === '::1') corsOrigin = origin
+    } catch {
+      /* not a URL */
+    }
+  }
+  if (corsOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin)
+    res.setHeader('Vary', 'Origin')
+  }
+  if (req.method === 'OPTIONS') {
+    // Preflight for the panel's cross-origin POST (content-type json).
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'content-type')
+    res.setHeader('Access-Control-Max-Age', '600')
+    res.writeHead(204)
+    return res.end()
+  }
+
   if (p === '/' || p === '/index.html') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     return res.end(assets.indexHtml)
@@ -338,7 +399,83 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/api/themes' && req.method === 'GET') {
-    return sendJson(res, 200, { themes: THEMES })
+    return sendJson(res, 200, { themes: allThemes() })
+  }
+
+  // VS1 — live preview: applies the edited tokens without persisting them.
+  // The next apply / save / restore returns the app to the saved state.
+  if (p === '/api/preview' && req.method === 'POST') {
+    const body = await readBody(req)
+    const theme = normalizeTheme(body.theme || {})
+    const css = themeToCss(theme)
+    lastPreviewCss = css
+    restartWatcher(css)
+    return sendJson(res, 200, { ok: true })
+  }
+
+  // VS1 — theme storage: saves a user theme. Editing a built-in theme NEVER
+  // overwrites it: it creates a derived user theme (base = source theme), so
+  // "créer un thème n'écrase pas les autres" holds from day one.
+  if (p === '/api/themes/save' && req.method === 'POST') {
+    const body = await readBody(req)
+    const raw = body.theme || {}
+    const source = themeById(raw.id)
+    const isBuiltin = Boolean(source && THEMES.some((t) => t.id === source.id))
+    let theme
+    let isNew = false
+    if (source && !isBuiltin) {
+      theme = normalizeTheme(raw, source)
+    } else {
+      isNew = true
+      // Editing a built-in theme NEVER overwrites it: it creates a derived
+      // user theme, with an explicit "(custom)" suffix so the two are never
+      // confused in the list.
+      let name
+      if (isBuiltin) name = `${source.name} (custom)`
+      else if (!source) name = 'Custom theme'
+      else name = String(raw.name || '').trim() || source.name
+      theme = normalizeTheme({
+        ...raw,
+        id: uniqueThemeId(name),
+        name,
+        base: source?.id ?? 'default',
+        colorScheme: raw.colorScheme || source?.colorScheme || 'dark',
+      })
+    }
+    saveUserTheme(theme)
+    log(`Theme "${theme.name}" saved (${theme.id}).`)
+    if (body.activate) {
+      lastPreviewCss = null
+      if (config.nativePrefBefore == null && theme.colorScheme) {
+        config.nativePrefBefore = readNativeThemePref()
+      }
+      config.mode = 'theme'
+      config.themeId = theme.id
+      saveConfig(config)
+      restartWatcher()
+      log(`Theme "${theme.name}" is now active.`)
+    }
+    return sendJson(res, 200, { ok: true, theme: { ...theme, builtin: false }, isNew })
+  }
+
+  // VS1/VS2 — theme reset: restores the base of the theme. A user theme goes
+  // back to its base's tokens AND components (persisted); a built-in theme is
+  // already its own default, so reset simply returns it unchanged.
+  if (p === '/api/themes/reset' && req.method === 'POST') {
+    const body = await readBody(req)
+    const theme = themeById(body.themeId)
+    if (!theme) return sendJson(res, 404, { error: 'unknown-theme', message: 'Unknown theme.' })
+    const builtin = Boolean(THEMES.some((t) => t.id === theme.id))
+    let tokens = theme.tokens
+    let components = theme.components ?? {}
+    if (!builtin) {
+      const base = themeById(theme.base) ?? themeById('default')
+      tokens = base?.tokens ?? DEFAULT_TOKENS
+      components = base?.components ?? {}
+    }
+    const reset = normalizeTheme({ ...theme, tokens, components })
+    if (!builtin) saveUserTheme(reset)
+    return sendJson(res, 200, { ok: true, theme: { ...reset, builtin } })
   }
 
   if (p === '/api/launch' && req.method === 'POST') {
@@ -550,6 +687,7 @@ const server = http.createServer(async (req, res) => {
     if (config.nativePrefBefore == null && theme.colorScheme) {
       config.nativePrefBefore = readNativeThemePref()
     }
+    lastPreviewCss = null
     config.mode = 'theme'
     config.themeId = theme.id
     saveConfig(config)
@@ -573,6 +711,7 @@ const server = http.createServer(async (req, res) => {
     // Remove the CSS everywhere, restore the previous native preference.
     const restorePref = config.nativePrefBefore ?? 'dark'
     await applyOnceToOpenTargets('', restorePref)
+    lastPreviewCss = null
     config.mode = 'theme'
     config.themeId = null
     config.customCss = ''
@@ -611,8 +750,35 @@ function serveStatic(res, file) {
 /* Startup.                                                            */
 /* ------------------------------------------------------------------ */
 
+function findEdge() {
+  const candidates = [
+    process.env.EDGE_PATH,
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  ].filter(Boolean)
+  return candidates.find((c) => fs.existsSync(c)) ?? null
+}
+
+/**
+ * Opens the launcher. On Windows we prefer Chromium's `--app=` mode: a small
+ * standalone window (no tabs, no address bar) — the "toute petite fenêtre"
+ * of VS2.5 — instead of a browser tab. Falls back to the default browser.
+ */
 async function openBrowser(url) {
   if (process.argv.includes('--no-open')) return
+  const { spawn } = await import('node:child_process')
+  if (process.platform === 'win32') {
+    const edge = findEdge()
+    if (edge) {
+      try {
+        const child = spawn(edge, [`--app=${url}`], { detached: true, stdio: 'ignore', windowsHide: true })
+        if (child.unref) child.unref()
+        return
+      } catch {
+        /* fall back to the default browser below */
+      }
+    }
+  }
   const cmd =
     process.platform === 'win32'
       ? 'cmd'
@@ -621,12 +787,41 @@ async function openBrowser(url) {
         : 'xdg-open'
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
   try {
-    const { spawn } = await import('node:child_process')
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
     if (child.unref) child.unref()
   } catch {
-    /* opening the browser is a convenience, not a requirement */
+    /* opening the launcher is a convenience, not a requirement */
   }
+}
+
+// Single-instance guard: if another themer already holds the canonical UI
+// port (double-clicked twice, or Windows relaunched the exe), exit quietly
+// instead of starting a second server + launcher window. Without this, each
+// extra instance also polls /api/state every 2 s, which used to multiply the
+// console-window flashes (see lib/launcher.mjs).
+async function otherInstanceRunning() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${UI_PORT_START}/api/state`, {
+      signal: AbortSignal.timeout(1500),
+    })
+    if (!res.ok) return false
+    const body = await res.json()
+    return (
+      typeof body === 'object' &&
+      body !== null &&
+      'uiPort' in body &&
+      'freebuffPath' in body
+    )
+  } catch {
+    return false
+  }
+}
+
+if (await otherInstanceRunning()) {
+  // The launcher of the running instance is already on screen; there is
+  // nothing useful a second instance could do. Silent exit (GUI exe: no
+  // console, no flash).
+  process.exit(0)
 }
 
 serverPort = await findFreePort(UI_PORT_START)
@@ -634,13 +829,14 @@ server.listen(serverPort, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${serverPort}`
   console.log('')
   console.log('  ┌──────────────────────────────────────────────────┐')
-  console.log('  │   CustomFreebuff — theme studio                  │')
+  console.log('  │   CustomFreebuff — theme injector for Freebuff    │')
   console.log('  └──────────────────────────────────────────────────┘')
-  console.log(`  Studio   : ${url}`)
-  console.log(`  Freebuff : ${findFreebuff(config.appPath) || 'not found (see the studio)'}`)
+  console.log(`  Launcher : ${url}`)
+  console.log(`  Freebuff : ${findFreebuff(config.appPath) || 'not found (see the launcher)'}`)
   console.log('')
-  console.log('  For the theme to apply, Freebuff must be launched')
-  console.log('  from this studio (button "Launch Freebuff").')
+  console.log('  Click "Patch Freebuff" in the small launcher window:')
+  console.log('  Freebuff starts with the injection, and a "🎨 Thèmes"')
+  console.log('  button (Theme Engine) appears inside Freebuff, bottom-right.')
   console.log('  Nothing in the application is modified: everything')
   console.log('  is reversible and limited to the display.')
   console.log('')
