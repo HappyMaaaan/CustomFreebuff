@@ -125,7 +125,7 @@ All theme management happens **inside Freebuff** (the 🎨 Themes button), not
 in the launcher. The launcher remembers your choice, so the next time you
 patch Freebuff, the same theme comes back automatically.
 
-### Theme Engine inside Freebuff (VS0 → VS2)
+### Theme Engine inside Freebuff (VS0 → VS5)
 
 Once Freebuff is patched from the launcher, a small **🎨 Themes** button appears
 in the bottom-right corner of the app window — the first pieces of the future
@@ -141,6 +141,17 @@ theme panel:
   Modal**, each with **Colors, Border, Radius and Shadow**. Only the overridden
   settings are stored — so customizing a Button never leaks into Inputs,
   Cards or the rest of the app (component isolation),
+- **States** (VS3): every component has **Hover, Active, Focus, Disabled and
+  Loading** states, each editable with its own colors and glow — hovering
+  restyles the hovered element without touching its normal look,
+- **Shapes & Depth** (VS4): a global radius, border width and border opacity,
+  plus **multi-layer shadows** (X, Y, blur, spread, color, opacity, inner),
+  with 5 look presets (Flat, Soft, Floating, Deep, Neon),
+- **Effects** (VS5): one **glass style** for every surface at once —
+  transparency, backdrop blur, saturation, brightness, translucent borders,
+  glow, gradients and noise — with 5 presets (None, Subtle, Frosted, Strong,
+  Important). Heavy effects are detected and can be disabled or tuned down
+  for performance, and a master switch turns everything off,
 - **Save** saves the theme (editing a built-in theme never overwrites
   it: it creates a derived *custom* theme and activates it),
 - **Reset** restores the base theme's tokens **and** components,
@@ -237,7 +248,7 @@ source: see [TESTING.md](TESTING.md).** It walks through the in-app Theme
 Engine, the token editor and its live preview, persistence, disconnection,
 and how to rebuild the executable.
 
-The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, automatic theming of newly opened windows, the in-app Theme Engine panel (activate → visual change → restore, edit a token → several coherent places change → save → reset, customize a Button → it changes while Input/Card are untouched → save → reset), disconnection detection, and the token/component→CSS generator (unit).
+The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, automatic theming of newly opened windows, the in-app Theme Engine panel (activate → visual change → restore, edit a token → several coherent places change → save → reset, customize a Button → it changes while Input/Card are untouched → save → reset, real hover restyles only the hovered button, Flat→Floating transforms the whole interface, Frosted makes several components glassy at once), disconnection detection, and the token/component/shape/effects→CSS generator (unit).
 
 ## Project layout
 
@@ -246,7 +257,7 @@ start.bat / start.sh   # launchers (require Node.js)
 themer.mjs             # local server + API + orchestration
 lib/assets.mjs         # asset loading (embedded in the exe / disk in dev)
 lib/cdp.mjs            # minimal CDP client + CSS injection
-lib/theme-model.mjs    # theme model: tokens + components → generated CSS (VS1/VS2)
+lib/theme-model.mjs    # theme model: tokens + components + shape + effects → generated CSS (VS1→VS5)
 lib/theme-store.mjs    # user-theme persistence (VS1)
 lib/themeui.mjs        # in-app Theme Engine panel + editor injected into Freebuff
 lib/launcher.mjs       # Freebuff discovery and launch

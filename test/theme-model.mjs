@@ -15,16 +15,29 @@ import path from 'node:path'
 
 import {
   COMPONENT_KEYS,
+  COMPONENT_STATES,
+  COMPONENT_STATE_SELECTORS,
+  DEFAULT_SHAPE,
   DEFAULT_TOKENS,
+  EFFECT_PRESETS,
+  SHAPE_PRESETS,
   TOKEN_KEYS,
   componentCss,
   componentDefaults,
   darken,
+  effectCost,
+  effectsActive,
   lighten,
   mixHex,
   normalizeComponentOverrides,
+  normalizeEffects,
+  normalizeShadowLayers,
+  normalizeShape,
+  normalizeStateOverrides,
   normalizeTheme,
   parseHex,
+  resolveShapePreset,
+  shadowToCss,
   themeToCss,
   tokenVars,
 } from '../lib/theme-model.mjs'
@@ -165,6 +178,242 @@ check('sans composants, l\u2019objet est vide', Object.keys(normalizeTheme({ id:
 // 15. Component defaults derive from the global tokens (inheritance).
 const cd = componentDefaults(DEFAULT_TOKENS)
 check('les défauts dérivent des tokens globaux', cd.background === DEFAULT_TOKENS.surface && cd.accent === DEFAULT_TOKENS.accent && cd.radius === 6 && cd.borderWidth === 1)
+
+/* ------------------------------------------------------------------ */
+/* VS3 — component states                                              */
+/* ------------------------------------------------------------------ */
+
+// 16. The five states exist with their selector suffixes.
+check('les 5 états sont définis', COMPONENT_STATES.join(',') === 'hover,active,focus,disabled,loading', COMPONENT_STATES.join(','))
+check('le sélecteur hover est un pseudo-classe', COMPONENT_STATE_SELECTORS.hover === ':hover', COMPONENT_STATE_SELECTORS.hover)
+check('le sélecteur focus couvre souris + clavier', COMPONENT_STATE_SELECTORS.focus === ':focus, :focus-visible', COMPONENT_STATE_SELECTORS.focus)
+check('le sélecteur disabled couvre les deux formes', COMPONENT_STATE_SELECTORS.disabled === ':disabled, [disabled]', COMPONENT_STATE_SELECTORS.disabled)
+check('le sélecteur loading couvre les marqueurs courants', COMPONENT_STATE_SELECTORS.loading.includes('.loading') && COMPONENT_STATE_SELECTORS.loading.includes('[aria-busy="true"]'), COMPONENT_STATE_SELECTORS.loading)
+
+// 17. State overrides are validated like component overrides.
+const st = normalizeStateOverrides({ background: '#ff00aa', text: 'not-a-color', shadow: 'bogus', unknown: '#ffffff' })
+check('les overrides d\u2019état valides sont conservés', st.background === '#ff00aa' && Object.keys(st).length === 1, JSON.stringify(st))
+check('les états sans override sont ignorés', normalizeStateOverrides({}) === null || Object.keys(normalizeStateOverrides({})).length === 0)
+check('normalizeStateOverrides(undefined) est vide', Object.keys(normalizeStateOverrides(undefined)).length === 0)
+
+// 18. normalizeComponentOverrides keeps the states sub-object (validated).
+const ov2 = normalizeComponentOverrides({
+  background: '#ff00aa',
+  states: {
+    hover: { background: '#00ff88', text: 'bogus', shadow: 'soft' },
+    active: { text: '#0000ff' },
+    loading: { background: '#123456' },
+    bogus: { background: '#ffffff' },
+    focus: {},
+  },
+})
+check('seuls les états valides sont conservés', ov2.states && ov2.states.hover && ov2.states.active && ov2.states.loading && !ov2.states.bogus && !ov2.states.focus, JSON.stringify(ov2.states))
+check('les valeurs d\u2019état invalides sont filtrées', ov2.states.hover.background === '#00ff88' && ov2.states.hover.shadow === 'soft' && !('text' in ov2.states.hover), JSON.stringify(ov2.states.hover))
+check('sans état, pas de clé states', !('states' in normalizeComponentOverrides({ background: '#ff00aa' })))
+
+// 19. VS3 CSS — DoD : l\u2019état hover modifie UNIQUEMENT le bouton survolé,
+//     la règle de base (état normal) reste inchangée.
+const cssStates = componentCss({
+  button: {
+    background: '#ff00aa',
+    states: {
+      hover: { background: '#00ff88', shadow: 'soft' },
+      disabled: { text: '#999999' },
+    },
+  },
+})
+check(
+  'l\u2019état hover émet une règle scopée (famille de variables + ombre)',
+  cssStates.includes('button:hover{--surface: #00ff88 !important;--surface-2: #00ff88 !important;--raised: #00ff88 !important;box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important}'),
+  cssStates,
+)
+check(
+  'la règle de base (état normal) est inchangée',
+  cssStates.includes('button{--surface: #ff00aa !important;--surface-2: #ff00aa !important;--raised: #ff00aa !important}'),
+  cssStates,
+)
+check(
+  'l\u2019état disabled n\u2019émet que sa propriété surchargée',
+  cssStates.includes('button:disabled, button[disabled]{--text: #999999 !important;--muted: #999999 !important;--faint: #999999 !important}'),
+  cssStates,
+)
+check('les sélecteurs d\u2019état sont scopés au composant', cssStates.includes('button:active{') === false && cssStates.includes('button[data-loading]') === false, cssStates)
+
+// 20. themeToCss includes the state rules after the base rule.
+const css5 = themeToCss({
+  colorScheme: 'dark',
+  tokens: DEFAULT_TOKENS,
+  components: { button: { states: { active: { background: '#ff0000' } } } },
+})
+check(
+  'themeToCss inclut la règle d\u2019état',
+  css5.includes('\nbutton:active{--surface: #ff0000 !important;--surface-2: #ff0000 !important;--raised: #ff0000 !important}'),
+  css5,
+)
+
+// 21. Round-trip: normalizeTheme keeps the states.
+const nt2 = normalizeTheme({
+  id: 'x',
+  tokens: DEFAULT_TOKENS,
+  components: { button: { states: { hover: { background: '#abcdef', shadow: 'strong' } } } },
+})
+check(
+  'normalizeTheme conserve les états',
+  nt2.components.button.states.hover.background === '#abcdef' && nt2.components.button.states.hover.shadow === 'strong',
+  JSON.stringify(nt2.components),
+)
+const nt3 = normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS, components: { button: { states: { hover: { background: 'bogus' } } } } })
+// A component whose ONLY override is invalid is dropped entirely — nothing survives.
+check(
+  'les états invalides ne survivent pas au round-trip',
+  !nt3.components.button || !('states' in nt3.components.button),
+  JSON.stringify(nt3.components),
+)
+
+// 22. A state override equal to nothing is dropped: empty state \u2192 no CSS.
+const cssEmpty = componentCss({ button: { states: { hover: {} } } })
+check('un état sans override n\u2019émet aucune règle', !cssEmpty.includes(':hover'), cssEmpty)
+
+/* ------------------------------------------------------------------ */
+/* VS4 — shapes + shadows                                              */
+/* ------------------------------------------------------------------ */
+
+// 23. The global shape is validated + clamped.
+const sh = normalizeShape({ radius: 999, borderWidth: -3, borderOpacity: 2 })
+check('les valeurs shape hors bornes sont clampées', sh.radius === 48 && sh.borderWidth === 0 && sh.borderOpacity === 1, JSON.stringify(sh))
+check('les valeurs par défaut (0 = héritage) sont préservées', normalizeShape(undefined).radius === DEFAULT_SHAPE.radius && normalizeShape(null).borderOpacity === 1)
+check('un shape partiel est complété', normalizeShape({ radius: 12 }).borderWidth === 0 && normalizeShape({ radius: 12 }).borderOpacity === 1)
+
+// 24. Shadow layers are validated; invalid ones are dropped.
+const layers = normalizeShadowLayers([
+  { x: 0, y: 2, blur: 8, spread: 0, color: '#000000', opacity: 0.25, inner: false },
+  { x: 'a', y: 1, blur: 4, spread: 0, color: '#ffffff', opacity: 0.5 },
+  { x: 0, y: 0, blur: 4, spread: 0, color: 'not-a-color', opacity: 0.5 },
+])
+check('seules les couches valides survivent', layers.length === 1 && layers[0].color === '#000000', JSON.stringify(layers))
+check('une liste vide → aucune couche', normalizeShadowLayers([]).length === 0 && normalizeShadowLayers(undefined).length === 0)
+check('les valeurs hors bornes sont clampées', normalizeShadowLayers([{ x: 99, y: -99, blur: 200, spread: -99, color: '#000000', opacity: 5, inner: 1 }])[0].x === 40 && normalizeShadowLayers([{ x: 0, y: 0, blur: 0, spread: 0, color: '#000000', opacity: 0.3 }])[0].opacity === 0.3)
+
+// 25. shadowToCss renders single / multiple / inner layers.
+check('une couche simple → un box-shadow', shadowToCss([{ x: 0, y: 2, blur: 8, spread: 0, color: '#000000', opacity: 0.25 }]) === '0px 2px 8px 0px rgba(0, 0, 0, 0.25)', shadowToCss([{ x: 0, y: 2, blur: 8, spread: 0, color: '#000000', opacity: 0.25 }]))
+check('plusieurs couches → ombres séparées par des virgules', shadowToCss([{ x: 0, y: 2, blur: 8, spread: 0, color: '#000000', opacity: 0.3 }, { x: 0, y: 4, blur: 12, spread: 0, color: '#000000', opacity: 0.2 }]).includes('0.3), 0px 4px 12px 0px rgba(0, 0, 0, 0.2)'))
+check('inner → préfixe inset', shadowToCss([{ x: 0, y: 0, blur: 4, spread: 0, color: '#000000', opacity: 0.5, inner: true }]).startsWith('inset '))
+check('aucune couche → none', shadowToCss([]) === 'none' && shadowToCss(undefined) === 'none')
+
+// 26. The 5 named presets resolve to concrete shape + shadow data, and the
+//     neon 'ACCENT' color becomes the theme's actual accent.
+check('les 5 presets existent', Object.keys(SHAPE_PRESETS).join(',') === 'flat,soft,floating,deep,neon')
+const flat = resolveShapePreset('flat', '#7cff3f')
+check('flat → pas d\u2019ombre, petit rayon', flat.shadow.layers.length === 0 && flat.shape.radius === 2)
+const neon = resolveShapePreset('neon', '#50fa7b')
+check('neon → la couleur ACCENT devient l\u2019accent du thème', neon.shadow.layers.every((l) => l.color === '#50fa7b'), JSON.stringify(neon.shadow))
+check('neon → inclut une couche inner', neon.shadow.layers.some((l) => l.inner))
+const float = resolveShapePreset('floating', '#7cff3f')
+check('floating → 2 couches, rayon 14', float.shadow.layers.length === 2 && float.shape.radius === 14)
+
+// 27. themeToCss emits the --fbt-* variables + the global shape rule BEFORE
+//     the component rules (so a component override wins by cascade).
+const cssShape = themeToCss({
+  colorScheme: 'dark',
+  tokens: DEFAULT_TOKENS,
+  shape: { radius: 14, borderWidth: 2, borderOpacity: 0.5 },
+  shadow: { layers: [{ x: 0, y: 10, blur: 28, spread: -6, color: '#000000', opacity: 0.4, inner: false }] },
+  components: { button: { radius: 4 } },
+})
+check('les variables --fbt-* sont émises dans :root', cssShape.includes('--fbt-radius: 14px') && cssShape.includes('--fbt-border-width: 2px') && cssShape.includes('--fbt-border-opacity: 0.5'), cssShape.slice(0, 200))
+check('l\u2019ombre multi-couches est émise', cssShape.includes('--fbt-shadow: 0px 10px 28px -6px rgba(0, 0, 0, 0.4) !important'), cssShape)
+check('la règle shape globale s\u2019applique aux surfaces', cssShape.includes('button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"]{border-radius: var(--fbt-radius) !important;border-width: var(--fbt-border-width) !important;border-color: rgba(42, 42, 46, 0.5) !important;box-shadow: var(--fbt-shadow) !important}'), cssShape)
+check('la règle shape est AVANT les règles composants', cssShape.indexOf('{border-radius: var(--fbt-radius)') < cssShape.indexOf('button{border-radius: 4px !important}'), cssShape)
+
+// 28. 0 = inherit: with the default shape, NO shape rule is emitted — the app
+//     keeps its own radius/border/shadow, so activating a theme never
+//     silently restyles the app's look.
+const cssFlat = themeToCss({ colorScheme: 'dark', tokens: DEFAULT_TOKENS })
+check('shape par défaut → aucune règle shape globale', !cssFlat.includes('--fbt-radius') || !cssFlat.includes('border-radius: var(--fbt-radius)'), cssFlat)
+const cssRadiusOnly = themeToCss({ colorScheme: 'dark', tokens: DEFAULT_TOKENS, shape: { radius: 12 } })
+check('seul le rayon est émis quand le reste est à l\u2019héritage', cssRadiusOnly.includes('border-radius: var(--fbt-radius) !important') && !cssRadiusOnly.includes('border-width: var(--fbt-border-width)') && !cssRadiusOnly.includes('box-shadow: var(--fbt-shadow)'), cssRadiusOnly)
+
+// 29. Round-trip: normalizeTheme keeps shape + shadow.
+const nt4 = normalizeTheme({
+  id: 'x',
+  tokens: DEFAULT_TOKENS,
+  shape: { radius: 16, borderWidth: 2, borderOpacity: 0.7 },
+  shadow: { layers: [{ x: 0, y: 0, blur: 12, spread: 0, color: '#ff00aa', opacity: 0.5, inner: true }] },
+})
+check('normalizeTheme conserve shape', nt4.shape.radius === 16 && nt4.shape.borderWidth === 2 && nt4.shape.borderOpacity === 0.7, JSON.stringify(nt4.shape))
+check('normalizeTheme conserve l\u2019ombre', nt4.shadow.layers.length === 1 && nt4.shadow.layers[0].color === '#ff00aa' && nt4.shadow.layers[0].inner === true, JSON.stringify(nt4.shadow))
+check('normalizeTheme remplit les défauts', normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS }).shape.radius === 0 && normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS }).shadow.layers.length === 0)
+const nt5 = normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS, shadow: { layers: [{ x: 0, y: 0, blur: 5, spread: 0, color: 'bogus', opacity: 0.5 }] } })
+check('une couche invalide ne survit pas au round-trip', nt5.shadow.layers.length === 0, JSON.stringify(nt5.shadow))
+
+/* ------------------------------------------------------------------ */
+/* VS5 — glass & visual effects                                        */
+/* ------------------------------------------------------------------ */
+
+// The glass rule targets the same surface selector list as the shape rule.
+const SHAPE_SELECTORS_CHECK = 'button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"]'
+
+// 30. The five effect presets exist with the spec names.
+check('les 5 presets d\u2019effets existent', Object.keys(EFFECT_PRESETS).join(',') === 'none,subtle,frosted,strong,important')
+check('frosted est activé avec du flou', EFFECT_PRESETS.frosted.enabled && EFFECT_PRESETS.frosted.blur === 14 && EFFECT_PRESETS.frosted.transparency === 0.78)
+check('none désactive les effets', EFFECT_PRESETS.none.enabled === false)
+
+// 31. normalizeEffects validates + clamps.
+const ef = normalizeEffects({ enabled: 1, transparency: 9, blur: -5, saturation: 0.1, brightness: 3, borderTranslucency: 0, glow: 2, gradient: -1, grain: 0.5, performance: 'bogus' })
+check('les valeurs hors bornes sont clampées', ef.transparency === 1 && ef.blur === 0 && ef.saturation === 0.5 && ef.brightness === 1.5 && ef.borderTranslucency === 0 && ef.glow === 1 && ef.gradient === 0 && ef.grain === 0.5, JSON.stringify(ef))
+check('un mode invalide retombe sur none', ef.mode === 'none' && ef.performance === 'auto')
+check('les défauts sont remplis', normalizeEffects(undefined).transparency === 1 && normalizeEffects(null).enabled === false && normalizeEffects({}).blur === 0)
+check('le mode est conservé s\u2019il est valide', normalizeEffects({ mode: 'frosted', blur: 10 }).mode === 'frosted')
+
+// 32. effectsActive / effectCost detect the heavy effects.
+check('désactivé → aucun effet actif', effectsActive({ enabled: false, blur: 14 }) === false)
+check('transparence → effets actifs', effectsActive({ enabled: true, transparency: 0.8 }))
+check('tout par défaut → inactif', effectsActive({ enabled: true }) === false)
+check('blur → heavy', effectCost({ enabled: true, blur: 14 }).level === 'heavy' && effectCost({ enabled: true, blur: 14 }).heavy.includes('backdrop blur'))
+check('grain → heavy', effectCost({ enabled: true, grain: 0.3 }).heavy.includes('noise grain'))
+check('glow seul → light', effectCost({ enabled: true, glow: 0.2 }).level === 'light')
+check('désactivé → none', effectCost({ enabled: false }).level === 'none')
+
+// 33. VS5 DoD — one coherent glass style on several components, no CSS.
+const cssGlass = themeToCss({
+  colorScheme: 'dark',
+  tokens: DEFAULT_TOKENS,
+  effects: { enabled: true, mode: 'frosted', transparency: 0.78, blur: 14, saturation: 1.2, brightness: 1.05, borderTranslucency: 0.4 },
+})
+check('glass → fond translucide sur les surfaces', cssGlass.includes('background: rgba(21, 21, 23, 0.78) !important'), cssGlass)
+check('glass → bordure translucide', cssGlass.includes('border-color: rgba(42, 42, 46, 0.4) !important'), cssGlass)
+check('glass → backdrop blur + saturation + brightness', cssGlass.includes('backdrop-filter: blur(14px) saturate(1.2) brightness(1.05) !important') && cssGlass.includes('-webkit-backdrop-filter: blur(14px) saturate(1.2) brightness(1.05) !important'), cssGlass)
+check('glass s\u2019applique à tous les composants à la fois', cssGlass.includes(SHAPE_SELECTORS_CHECK), cssGlass)
+
+// 34. Effects off → no glass declaration at all.
+const cssNoFx = themeToCss({ colorScheme: 'dark', tokens: DEFAULT_TOKENS, effects: { enabled: false, blur: 14 } })
+check('effets désactivés → aucune règle glass', !cssNoFx.includes('backdrop-filter') && !cssNoFx.includes('rgba(21, 21, 23'), cssNoFx)
+
+// 35. performance 'off' neutralizes blur + grain but keeps light effects.
+const cssPerf = themeToCss({
+  colorScheme: 'dark',
+  tokens: DEFAULT_TOKENS,
+  effects: { enabled: true, mode: 'frosted', transparency: 0.8, blur: 14, saturation: 1.2, brightness: 1.05, grain: 0.3, performance: 'off' },
+})
+check('perf off → plus de backdrop blur', !cssPerf.includes('backdrop-filter'), cssPerf)
+check('perf off → plus de grain', !cssPerf.includes('feTurbulence'), cssPerf)
+check('perf off → la transparence reste', cssPerf.includes('background: rgba(21, 21, 23, 0.8) !important'), cssPerf)
+
+// 36. Glow joins the elevation shadow; gradient + grain add layers.
+const cssGlow = themeToCss({
+  colorScheme: 'dark',
+  tokens: { ...DEFAULT_TOKENS, accent: '#7cff3f' },
+  shadow: { layers: [{ x: 0, y: 4, blur: 12, spread: 0, color: '#000000', opacity: 0.3, inner: false }] },
+  effects: { enabled: true, glow: 0.3, gradient: 0.4, grain: 0.2 },
+})
+check('glow → ombre combinée (élévation + halo accent)', cssGlow.includes('--fbt-shadow: 0px 4px 12px 0px rgba(0, 0, 0, 0.3), 0 0 8px rgba(124, 255, 63, 0.17) !important'), cssGlow)
+check('gradient → dégradé accent sur le fond glass', cssGlow.includes('background: linear-gradient(135deg, rgba(124, 255, 63, 0.048), transparent 60%), rgba(21, 21, 23, 1) !important'), cssGlow)
+check('grain → bruit SVG en background-image', cssGlow.includes('background-image: url("data:image/svg+xml;utf8,<svg') && cssGlow.includes('feTurbulence'), cssGlow)
+
+// 37. Round-trip: normalizeTheme keeps the effects.
+const nt6 = normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS, effects: { enabled: true, mode: 'frosted', transparency: 0.7, blur: 18, grain: 0.1, performance: 'off' } })
+check('normalizeTheme conserve les effets', nt6.effects.enabled && nt6.effects.mode === 'frosted' && nt6.effects.blur === 18 && nt6.effects.performance === 'off', JSON.stringify(nt6.effects))
+check('normalizeTheme remplit les défauts d\u2019effets', normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS }).effects.enabled === false)
 
 console.log('')
 if (failures) {

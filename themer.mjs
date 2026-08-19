@@ -468,12 +468,18 @@ const server = http.createServer(async (req, res) => {
     const builtin = Boolean(THEMES.some((t) => t.id === theme.id))
     let tokens = theme.tokens
     let components = theme.components ?? {}
+    let shape = theme.shape ?? {}
+    let shadow = theme.shadow ?? {}
+    let effects = theme.effects ?? {}
     if (!builtin) {
       const base = themeById(theme.base) ?? themeById('default')
       tokens = base?.tokens ?? DEFAULT_TOKENS
       components = base?.components ?? {}
+      shape = base?.shape ?? {}
+      shadow = base?.shadow ?? {}
+      effects = base?.effects ?? {}
     }
-    const reset = normalizeTheme({ ...theme, tokens, components })
+    const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects })
     if (!builtin) saveUserTheme(reset)
     return sendJson(res, 200, { ok: true, theme: { ...reset, builtin } })
   }

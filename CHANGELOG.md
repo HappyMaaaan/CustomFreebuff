@@ -3,6 +3,41 @@
 All notable changes to CustomFreebuff, one section per release. The release
 notes on GitHub are generated from this file.
 
+## v1.2.0 — 2026-08-19
+
+### Component states 🎯
+
+- **Button, Input, Card, Sidebar and Modal now have 5 states each**: Hover,
+  Active, Focus, Disabled and Loading.
+- Each state has its own colors and glow, with a **live preview**: hover, press
+  or focus a real button to see exactly what the state will look like.
+- **Per-state isolation**: changing a button's hover style never affects its
+  normal look — the base state stays intact unless you change it.
+
+### Shapes & Depth 🎨
+
+- A new **Shapes & Depth** section controls the visual physics of Freebuff:
+  radius, borders and shadows, globally.
+- **5 look presets** — Flat, Soft, Floating, Deep, Neon — transform the whole
+  interface in one click.
+- **Multi-layer shadows** with full control: X, Y, blur, spread, color,
+  opacity, inner shadows, and as many layers as you want.
+- Neon glows with the theme's accent color; elevation presets cast a natural
+  shadow.
+- Per-component radius and shadow still win over the global shape (isolation
+  preserved).
+
+### Glass & Visual Effects ✨
+
+- **One coherent glass style applied to every surface of the app** — no CSS
+  to write: transparency, backdrop blur, saturation, brightness and
+  translucent borders.
+- **Glow, gradients and noise/grain** to finish the look.
+- **5 effect presets**: None, Subtle, Frosted, Strong, Important.
+- **Performance control**: heavy effects (backdrop blur, noise) are detected
+  and can be disabled in one click, or tuned down without losing the light
+  effects — and a master switch turns everything off.
+
 ## v1.1.0 — 2026-08-19
 
 ### Theme Engine, right inside Freebuff 🎨

@@ -240,12 +240,18 @@ async function serveMock(port, targetProvider) {
         if (!theme) return send(404, { error: 'unknown-theme', message: 'Unknown theme.' })
         let tokens = theme.tokens
         let components = theme.components ?? {}
+        let shape = theme.shape ?? {}
+        let shadow = theme.shadow ?? {}
+        let effects = theme.effects ?? {}
         if (!theme.builtin) {
           const base = themeById(theme.base) ?? themeById('default')
           tokens = base?.tokens ?? DEFAULT_TOKENS
           components = base?.components ?? {}
+          shape = base?.shape ?? {}
+          shadow = base?.shadow ?? {}
+          effects = base?.effects ?? {}
         }
-        const reset = normalizeTheme({ ...theme, tokens, components })
+        const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects })
         if (!theme.builtin) state.userThemes.set(reset.id, reset)
         send(200, { ok: true, theme: { ...reset, builtin: theme.builtin } })
       } else if (url.pathname === '/api/restore' && req.method === 'POST') {
@@ -545,6 +551,261 @@ async function main() {
       return t && (!t.components || !Object.keys(t.components).length) ? t : null
     })
     check('Reset persiste la disparition des composants', Boolean(resetComp))
+
+    /* ------------------------------------------------------------ */
+    /* VS3 — component states                                       */
+    /* ------------------------------------------------------------ */
+
+    // Rouvrir l'éditeur sur dracula-custom (le reset VS2 a vidé les composants).
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+
+    // 18. Le détail du composant liste les 5 états.
+    await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-comp-detail').hidden`)
+      return hidden === false
+    })
+    const stateRows = await evalOn(client, `${SHADOW}.querySelectorAll('#fbt-states .fbt-state-row').length`)
+    check('le détail du composant liste les 5 états', stateRows === 5, String(stateRows))
+
+    // 19. Ouvrir l'état Hover.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-states [data-state="hover"]').click()`)
+    const hoverOpen = await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-state-detail').hidden`)
+      const title = await evalOn(client, `${SHADOW}.querySelector('#fbt-state-detail .fbt-title').textContent`)
+      return !hidden && title === 'Button \u00b7 Hover' ? title : null
+    })
+    check('l\u2019éditeur de l\u2019état Hover s\u2019ouvre', hoverOpen === 'Button \u00b7 Hover', hoverOpen)
+
+    // 20. DoD : changer le fond de l'état Hover → le bouton change UNIQUEMENT
+    //     survolé, son état normal reste intact.
+    await evalOn(client, `(() => {
+      const input = ${SHADOW}.querySelector('#fbt-state-colors input[data-prop="background"]');
+      input.value = '#00ff88';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const baseBg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+    check('état normal : le bouton garde sa surface globale (inchangé)', baseBg === 'rgb(45, 47, 58)', baseBg)
+
+    // Vrai survol via CDP → la règle button:hover s'applique réellement.
+    const rect = await evalOn(client, `(() => {
+      const r = document.getElementById('demo-btn').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y })
+    const hoverBg = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(0, 255, 136)' ? bg : null
+    })
+    check('survolé : le bouton prend le fond de l\u2019état Hover', hoverBg === 'rgb(0, 255, 136)', hoverBg)
+    const hoverInputBg = await evalOn(client, `getComputedStyle(document.getElementById('demo-input')).backgroundColor`)
+    check('l\u2019input n\u2019est PAS affecté par le survol du bouton (isolation)', hoverInputBg === 'rgb(45, 47, 58)', hoverInputBg)
+
+    // Sortir du survol → retour à l'état normal.
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+    const backBg = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('hors survol : le bouton revient à son état normal', backBg === 'rgb(45, 47, 58)', backBg)
+
+    // 21. Le résumé de l'état reflète l'override.
+    const hoverSummary = await evalOn(client, `${SHADOW}.querySelector('#fbt-states [data-state="hover"] .fbt-state-summary').textContent`)
+    check('le résumé de l\u2019état Hover reflète l\u2019override', /1 setting modified/.test(hoverSummary || ''), hoverSummary)
+
+    // 22. Reset de l'état → le survol ne change plus rien.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-state-reset').click()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y })
+    const resetHover = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('Reset de l\u2019état : le survol redevient l\u2019état normal', resetHover === 'rgb(45, 47, 58)', resetHover)
+
+    /* ------------------------------------------------------------ */
+    /* VS4 — shapes + shadows                                       */
+    /* ------------------------------------------------------------ */
+
+    // Retour à l'éditeur principal (état → composant → éditeur).
+    await evalOn(client, `${SHADOW}.getElementById('fbt-state-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-comp-back').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+
+    // 23. La section Shapes & Depth liste les 5 presets.
+    const presets = await evalOn(client, `${SHADOW}.querySelectorAll('#fbt-shape-presets .fbt-preset').length`)
+    check('la section Shapes & Depth liste les 5 presets', presets === 5, String(presets))
+
+    // État initial : la card garde le look de l'app (rayon 8, pas d'ombre).
+    const initialCard = await evalOn(client, `(() => {
+      const c = getComputedStyle(document.querySelector('.card'));
+      return { radius: c.borderRadius, shadow: c.boxShadow };
+    })()`)
+    check('par défaut la card garde son look (aucun shape appliqué)', initialCard.radius === '8px' && initialCard.shadow === 'none', JSON.stringify(initialCard))
+
+    // 24. DoD — Flat → Floating depuis l'éditeur : la card devient flottante
+    //     (rayon augmenté + ombre d'élévation), sans toucher aux tokens.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-shape-presets [data-preset="floating"]').click()`)
+    const floatingCard = await waitFor(async () => {
+      const c = await evalOn(client, `(() => {
+        const el = document.querySelector('.card');
+        const s = getComputedStyle(el);
+        return { radius: s.borderRadius, shadow: s.boxShadow };
+      })()`)
+      return c.radius === '14px' && c.shadow.includes('rgba(0, 0, 0, 0.4)') ? c : null
+    })
+    check('preset Floating → la card gagne le rayon 14px', floatingCard?.radius === '14px', floatingCard?.radius)
+    check('preset Floating → la card gagne une ombre d\u2019élévation', floatingCard?.shadow.includes('rgba(0, 0, 0, 0.4)'), floatingCard?.shadow)
+    const btnShape = await evalOn(client, `(() => {
+      const s = getComputedStyle(document.getElementById('demo-btn'));
+      return { radius: s.borderRadius, shadow: s.boxShadow };
+    })()`)
+    check('le bouton (surface) suit aussi le shape global', btnShape.radius === '14px' && btnShape.shadow.includes('rgba(0, 0, 0, 0.4)'), JSON.stringify(btnShape))
+    const layerCount = await evalOn(client, `${SHADOW}.querySelectorAll('#fbt-shadow-layers .fbt-shadow-layer').length`)
+    check('l\u2019éditeur d\u2019ombre liste les 2 couches du preset', layerCount === 2, String(layerCount))
+
+    // 25. Opacité de bordure : 50 % → la bordure de la card devient translucide.
+    await evalOn(client, `(() => {
+      const input = ${SHADOW}.getElementById('fbt-shape-border-opacity');
+      input.value = '50';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    // dracula's border token is #44475a → rgb(68, 71, 90).
+    const cardBorder = await waitFor(async () => {
+      const c = await evalOn(client, `getComputedStyle(document.querySelector('.card')).borderColor`)
+      return c === 'rgba(68, 71, 90, 0.5)' ? c : null
+    })
+    check('opacité de bordure 50 % → bordure translucide', cardBorder === 'rgba(68, 71, 90, 0.5)', cardBorder)
+
+    // 26. Sauvegarde → le thème stocke shape + shadow.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const savedShape = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.shape && t.shape.radius === 14 && t.shadow && t.shadow.layers.length === 2 ? t : null
+    })
+    check('Enregistrer stocke le shape (rayon 14)', Boolean(savedShape), JSON.stringify(savedShape?.shape))
+    check('Enregistrer stocke les couches d\u2019ombre', savedShape?.shadow.layers.length === 2, JSON.stringify(savedShape?.shadow))
+
+    // 27. Reset → le shape revient à la base (plus de rayon, plus d'ombre).
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+    await evalOn(client, `${SHADOW}.getElementById('fbt-reset').click()`)
+    const resetCard = await waitFor(async () => {
+      const c = await evalOn(client, `(() => {
+        const s = getComputedStyle(document.querySelector('.card'));
+        return { radius: s.borderRadius, shadow: s.boxShadow };
+      })()`)
+      return c.radius === '8px' && c.shadow === 'none' ? c : null
+    })
+    check('Reset ramène la card à son look d\u2019origine (8px, sans ombre)', Boolean(resetCard), JSON.stringify(resetCard))
+    const resetStoredShape = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.shape && t.shape.radius === 0 && t.shadow.layers.length === 0 ? t : null
+    })
+    check('Reset persiste la disparition du shape', Boolean(resetStoredShape), JSON.stringify(resetStoredShape?.shape))
+
+    /* ------------------------------------------------------------ */
+    /* VS5 — glass & visual effects                                 */
+    /* ------------------------------------------------------------ */
+
+    // L'éditeur est resté ouvert sur dracula-custom (reset VS4).
+    const fxPresets = await evalOn(client, `${SHADOW}.querySelectorAll('#fbt-effects-presets .fbt-preset').length`)
+    check('la section Effects liste les 5 presets', fxPresets === 5, String(fxPresets))
+    const initialFx = await evalOn(client, `(() => {
+      const s = getComputedStyle(document.querySelector('.card'));
+      return { bg: s.backgroundColor, blur: s.backdropFilter };
+    })()`)
+    check('au départ : pas d\u2019effets (fond opaque, aucun flou)', initialFx.bg === 'rgb(45, 47, 58)' && initialFx.blur === 'none', JSON.stringify(initialFx))
+
+    // 28. DoD — Frosted : un style glass cohérent sur PLUSIEURS composants
+    //     à la fois, sans écrire de CSS.
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-effects-presets [data-preset="frosted"]').click()`)
+    const glassCard = await waitFor(async () => {
+      const c = await evalOn(client, `(() => {
+        const el = document.querySelector('.card');
+        const s = getComputedStyle(el);
+        return { bg: s.backgroundColor, blur: s.backdropFilter, border: s.borderColor };
+      })()`)
+      return c.bg === 'rgba(45, 47, 58, 0.78)' ? c : null
+    })
+    check('frosted → la card devient translucide', glassCard?.bg === 'rgba(45, 47, 58, 0.78)', glassCard?.bg)
+    check('frosted → backdrop blur appliqué', glassCard?.blur === 'blur(14px) saturate(1.2) brightness(1.05)', glassCard?.blur)
+    check('frosted → bordure translucide', glassCard?.border === 'rgba(68, 71, 90, 0.4)', glassCard?.border)
+    const glassOthers = await evalOn(client, `(() => {
+      const inp = getComputedStyle(document.getElementById('demo-input')).backgroundColor;
+      const btn = getComputedStyle(document.getElementById('demo-btn')).backgroundColor;
+      return { inp, btn };
+    })()`)
+    check('le bouton ET l\u2019input reçoivent le même glass (DoD multi-composants)', glassOthers.inp === 'rgba(45, 47, 58, 0.78)' && glassOthers.btn === 'rgba(45, 47, 58, 0.78)', JSON.stringify(glassOthers))
+
+    // 29. Détection des effets coûteux + contrôle de performance.
+    const perfBadge = await evalOn(client, `${SHADOW}.getElementById('fbt-effects-perf').textContent`)
+    check('le badge détecte les effets coûteux (backdrop blur)', /Heavy effects/.test(perfBadge || '') && /backdrop blur/.test(perfBadge || ''), perfBadge)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-effects-perf-toggle').click()`)
+    const perfOff = await waitFor(async () => {
+      const c = await evalOn(client, `(() => {
+        const s = getComputedStyle(document.querySelector('.card'));
+        return { bg: s.backgroundColor, blur: s.backdropFilter };
+      })()`)
+      return c.blur === 'none' && c.bg === 'rgba(45, 47, 58, 0.78)' ? c : null
+    })
+    check('perf off → le flou disparaît, la transparence reste', Boolean(perfOff), JSON.stringify(perfOff))
+    const perfBadge2 = await evalOn(client, `${SHADOW}.getElementById('fbt-effects-perf').textContent`)
+    check('le badge confirme le mode performance', /Performance mode/.test(perfBadge2 || ''), perfBadge2)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-effects-perf-toggle').click()`)
+    await waitFor(async () => {
+      const blur = await evalOn(client, `getComputedStyle(document.querySelector('.card')).backdropFilter`)
+      return blur === 'blur(14px) saturate(1.2) brightness(1.05)'
+    })
+    check('perf auto → le flou revient', true)
+
+    // 30. Désactiver les effets depuis le panneau.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-effects-enable').click()`)
+    const fxOff = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.querySelector('.card')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('le toggle désactive tous les effets (fond opaque)', fxOff === 'rgb(45, 47, 58)', fxOff)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-effects-enable').click()`)
+    await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.querySelector('.card')).backgroundColor`)
+      return bg === 'rgba(45, 47, 58, 0.78)'
+    })
+    check('réactiver → le glass revient', true)
+
+    // 31. Sauvegarde → le thème stocke les effets ; Reset → retour à la base.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const savedFx = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.effects && t.effects.enabled && t.effects.blur === 14 ? t : null
+    })
+    check('Enregistrer stocke les effets (frosted)', Boolean(savedFx), JSON.stringify(savedFx?.effects))
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false
+    })
+    await evalOn(client, `${SHADOW}.getElementById('fbt-reset').click()`)
+    const fxReset = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.querySelector('.card')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('Reset retire les effets (fond opaque)', fxReset === 'rgb(45, 47, 58)', fxReset)
+    const fxResetStored = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-custom')
+      return t && t.effects && t.effects.enabled === false ? t : null
+    })
+    check('Reset persiste la disparition des effets', Boolean(fxResetStored), JSON.stringify(fxResetStored?.effects))
 
     client.close()
   } finally {
