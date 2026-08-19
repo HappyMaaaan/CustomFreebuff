@@ -121,19 +121,19 @@ no tabs, no address bar) with essentially two buttons:
 - **Nettoyer les processus restants** — appears only when leftover Freebuff
   processes are detected.
 
-All theme management happens **inside Freebuff** (the 🎨 Thèmes button), not
+All theme management happens **inside Freebuff** (the 🎨 Themes button), not
 in the launcher. The launcher remembers your choice, so the next time you
 patch Freebuff, the same theme comes back automatically.
 
 ### Theme Engine inside Freebuff (VS0 → VS2)
 
-Once Freebuff is patched from the launcher, a small **🎨 Thèmes** button appears
+Once Freebuff is patched from the launcher, a small **🎨 Themes** button appears
 in the bottom-right corner of the app window — the first pieces of the future
 Theme Engine, usable directly inside Freebuff. Click it to open the in-app
 theme panel:
 
 - pick a theme → it is applied instantly and remembered locally,
-- **Modifier** opens the **Theme Editor** (VS1): the six design tokens
+- **Edit** opens the **Theme Editor** (VS1): the six design tokens
   (Background, Surface, Text, Muted Text, Border, Accent) as color pickers,
   with **live preview** — change Accent and every place driven by `--brand`
   (buttons, links, active states) changes at once,
@@ -141,10 +141,10 @@ theme panel:
   Modal**, each with **Colors, Border, Radius and Shadow**. Only the overridden
   settings are stored — so customizing a Button never leaks into Inputs,
   Cards or the rest of the app (component isolation),
-- **Enregistrer** saves the theme (editing a built-in theme never overwrites
+- **Save** saves the theme (editing a built-in theme never overwrites
   it: it creates a derived *custom* theme and activates it),
 - **Reset** restores the base theme's tokens **and** components,
-- **Restaurer le look d'origine** removes the CSS everywhere,
+- **Restore the original look** removes the CSS everywhere,
 - the header shows the live status (injection active, studio offline, …).
 
 The panel lives in its own Shadow DOM and only talks to the local standalone
@@ -201,7 +201,7 @@ The standalone does four things:
 
 1. **Launch** — it starts Freebuff with `--remote-debugging-port=<port>`, a standard Chromium switch (the same mechanism as DevTools). The port only listens on `127.0.0.1`.
 2. **Inject CSS** — over the DevTools protocol, it adds a `<style>` element to the app's page, exactly like a browser extension. The theme is re-applied whenever a window opens or the page reloads.
-3. **Theme Engine panel (VS0)** — it injects a small *Thèmes* button + panel into the app window, so themes can be activated from inside Freebuff itself. The panel is self-contained (Shadow DOM) and talks back to the studio over the local API.
+3. **Theme Engine panel (VS0)** — it injects a small *Themes* button + panel into the app window, so themes can be activated from inside Freebuff itself. The panel is self-contained (Shadow DOM) and talks back to the launcher over the local API.
 4. **Native window color** — the title bar color follows the app's own theme API (`window.freebuffDesktop.setTheme`), i.e. the built-in dark/light setting.
 
 ## Why this is safe

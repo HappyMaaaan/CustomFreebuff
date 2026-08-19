@@ -94,23 +94,23 @@
   <div class="logo">CF</div>
   <div>
     <h1>CustomFreebuff</h1>
-    <p>Injecteur de thème pour Freebuff Desktop</p>
+    <p>Theme injector for Freebuff Desktop</p>
   </div>
 </header>
 
 <main>
   <div class="status">
     <span class="dot" id="statusDot"></span>
-    <span id="statusText">Connexion au lanceur…</span>
+    <span id="statusText">Connecting to the launcher…</span>
   </div>
 
   <button class="primary" id="btnPatch">🎯 Patch Freebuff (injection)</button>
 
   <div class="message" id="message"></div>
 
-  <button id="btnCleanup">Nettoyer les processus restants</button>
+  <button id="btnCleanup">Clean up leftover processes</button>
 
-  <p class="foot">Le choix des thèmes se fait directement dans Freebuff (bouton 🎨 en bas à droite).</p>
+  <p class="foot">Theme selection happens directly in Freebuff (🎨 button, bottom-right).</p>
 </main>
 
 <script>
@@ -146,28 +146,28 @@
   function setStatus(state) {
     if (!state.freebuffFound) {
       dot.className = 'dot err'
-      statusText.textContent = 'Freebuff introuvable'
+      statusText.textContent = 'Freebuff not found'
       return
     }
     if (state.running) {
       dot.className = 'dot warn'
-      statusText.textContent = 'Freebuff est en cours d\u2019exécution — il doit être fermé pour le patch'
+      statusText.textContent = 'Freebuff is running — it must be closed before patching'
       return
     }
     if (state.debugAlive && state.connected > 0) {
       dot.className = 'dot ok'
-      statusText.textContent = 'Freebuff est patché — Theme Engine actif'
+      statusText.textContent = 'Freebuff is patched — Theme Engine active'
       return
     }
     dot.className = 'dot'
-    statusText.textContent = 'Freebuff est fermé — prêt pour le patch'
+    statusText.textContent = 'Freebuff is closed — ready to patch'
   }
 
   async function refresh() {
     const state = await api('/api/state').catch(() => null)
     if (!state) {
       dot.className = 'dot err'
-      statusText.textContent = 'Lanceur injoignable'
+      statusText.textContent = 'Launcher unreachable'
       return
     }
     setStatus(state)
@@ -176,24 +176,24 @@
 
   btnPatch.addEventListener('click', async () => {
     btnPatch.disabled = true
-    statusText.textContent = 'Patch en cours… (le lancement peut prendre jusqu\u2019à 45 s)'
+    statusText.textContent = 'Patching… (launching can take up to 45 s)'
     try {
       const r = await api('/api/launch', 'POST')
       if (r.ok && r.started) {
-        showMessage('Freebuff est lancé avec l\u2019injection. Le bouton 🎨 Thèmes est en bas à droite de Freebuff.', 'ok', 7000)
+        showMessage('Freebuff launched with the injection. The 🎨 Themes button is at the bottom-right of Freebuff.', 'ok', 7000)
         dot.className = 'dot ok'
-        statusText.textContent = 'Freebuff est patché — Theme Engine actif'
+        statusText.textContent = 'Freebuff is patched — Theme Engine active'
       } else if (r.error === 'already-running' || r.status === 409) {
-        showMessage('Freebuff est déjà en cours d\u2019exécution : fermez-le (fenêtre ou processus), puis cliquez à nouveau sur Patch.', 'error', 8000)
+        showMessage('Freebuff is already running: close it (window or processes), then click Patch again.', 'error', 8000)
         dot.className = 'dot warn'
-        statusText.textContent = 'Freebuff est en cours d\u2019exécution — il doit être fermé pour le patch'
+        statusText.textContent = 'Freebuff is running — it must be closed before patching'
       } else if (r.error === 'freebuff-not-found') {
         showMessage(r.message || 'Freebuff est introuvable.', 'error', 10000)
       } else {
         showMessage(r.message || 'Le patch a échoué.', 'error', 10000)
       }
     } catch (err) {
-      showMessage('Impossible de joindre le lanceur : ' + err.message, 'error', 8000)
+      showMessage('Could not reach the launcher: ' + err.message, 'error', 8000)
     } finally {
       btnPatch.disabled = false
       refresh()
@@ -202,7 +202,7 @@
 
   btnCleanup.addEventListener('click', async () => {
     const r = await api('/api/cleanup', 'POST')
-    showMessage(r.message || 'Nettoyage terminé.', 'ok', 5000)
+    showMessage(r.message || 'Cleanup done.', 'ok', 5000)
     refresh()
   })
 

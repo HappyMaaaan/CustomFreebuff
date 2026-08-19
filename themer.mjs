@@ -485,7 +485,7 @@ const server = http.createServer(async (req, res) => {
       await finishTrace(trace, 'error', 'Freebuff executable not found.')
       return sendJson(res, 400, {
         error: 'freebuff-not-found',
-        message: 'Freebuff Desktop was not found. Use the "Freebuff path" field in the studio, or the FREEBUFF_EXE environment variable.',
+        message: 'Freebuff Desktop was not found. Set the FREEBUFF_EXE environment variable to its path.',
         trace: tracePayload(trace),
       })
     }
@@ -835,7 +835,7 @@ server.listen(serverPort, '127.0.0.1', () => {
   console.log(`  Freebuff : ${findFreebuff(config.appPath) || 'not found (see the launcher)'}`)
   console.log('')
   console.log('  Click "Patch Freebuff" in the small launcher window:')
-  console.log('  Freebuff starts with the injection, and a "🎨 Thèmes"')
+  console.log('  Freebuff starts with the injection, and a "🎨 Themes"')
   console.log('  button (Theme Engine) appears inside Freebuff, bottom-right.')
   console.log('  Nothing in the application is modified: everything')
   console.log('  is reversible and limited to the display.')

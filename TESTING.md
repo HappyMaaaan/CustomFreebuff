@@ -1,216 +1,210 @@
-# Guide de test — VS0 (Injection) + VS1 (Theme + Design Tokens)
+# Testing guide — VS0 (Injection) + VS1 (Theme + Design Tokens) + VS2 (Components)
 
-Ce guide explique comment vérifier que tout fonctionne **avant de continuer
-vers la VS2**. Il y a deux niveaux :
+This guide explains how to verify that everything works **before moving on**.
+There are two levels:
 
-1. **Les tests automatisés** (30 secondes) — à lancer après chaque modification.
-2. **Le test manuel de bout en bout** (5 minutes) — le seul qui prouve que le
-   Theme Engine pilote réellement votre Freebuff.
+1. **Automated tests** (30 seconds) — run after every change.
+2. **Manual end-to-end test** (5 minutes) — the only one that proves the
+   Theme Engine actually drives your Freebuff.
 
 ---
 
-## 1. Tests automatisés (rapide, à faire à chaque modification)
+## 1. Automated tests (quick, after every change)
 
-Depuis le dossier du projet (`C:\Users\Utilisateur\Desktop\CustomFreebuff`) :
+From the project folder (`C:\Users\Utilisateur\Desktop\CustomFreebuff`):
 
 ```bash
-npm run check   # vérifie la syntaxe de tous les fichiers
-npm test        # 4 suites de tests (~56 vérifications)
+npm run check   # syntax-check every file
+npm test        # 4 test suites (~90 checks)
 ```
 
-`npm test` lance un Chromium headless (Edge) contre une page qui imite le
-renderer de Freebuff et vérifie : injection CSS, survie au rechargement, appel
-de l'API native `setTheme`, panneau Theme Engine (VS0), **éditeur de tokens
-avec aperçu en direct, sauvegarde et reset (VS1)**, watcher et détection de
-déconnexion.
+`npm test` runs a headless Chromium (Edge) against a page that mimics the
+Freebuff renderer and verifies: CSS injection, survival across reload, the
+native `setTheme` API call, the Theme Engine panel (VS0), **token editor with
+live preview, save and reset (VS1)**, **component customization with
+isolation (VS2)**, the watcher and disconnection detection.
 
-> Si un test échoue, les lignes `✗ ...` montrent exactement ce qui ne va pas.
-> Toutes les suites doivent se terminer par « Toutes les vérifications sont
-> passées. ✔ ».
+> If a test fails, the `✗ ...` lines show exactly what went wrong. Every suite
+> must end with "Toutes les vérifications sont passées. ✔" (all checks passed).
 
 ---
 
-## 2. Test manuel — méthode la plus simple : le `.exe`
+## 2. Manual test — easiest way: the `.exe`
 
-Le fichier `dist\CustomFreebuff.exe` est autonome (aucun Node requis) :
+`dist\CustomFreebuff.exe` is self-contained (no Node needed):
 
-1. **Fermez Freebuff s'il est déjà ouvert** (sinon le patch est refusé).
-2. Double-cliquez sur `dist\CustomFreebuff.exe` — **aucune fenêtre de
-   terminal** ne s'ouvre (l'exe est en mode GUI).
-3. Une **toute petite fenêtre de lanceur** s'ouvre (mode application Edge,
-   sans onglets ni barre d'adresse) : un statut, un bouton
-   **🎯 Patch Freebuff (injection)** et un bouton de nettoyage si des
-   processus restants sont détectés.
+1. **Close Freebuff if it is already open** (otherwise the patch is refused).
+2. Double-click `dist\CustomFreebuff.exe` — **no terminal window** opens
+   (the exe is a GUI app).
+3. A **tiny launcher window** opens (Edge application mode, no tabs, no
+   address bar): a status, a **🎯 Patch Freebuff (injection)** button, and a
+   cleanup button when leftover processes are detected.
 
-   Depuis le code source, `start.bat` lance la même chose en cachant aussi la
-   console (via `start-hidden.vbs`).
+   From the source code, `start.bat` launches the same thing while hiding the
+   console too (via `start-hidden.vbs`).
 
-## 3. Test manuel — depuis le code source (Node)
+## 3. Manual test — from the source code (Node)
 
-Même chose, mais depuis le code (utile quand vous développez) :
+Same thing, but from the code (useful while developing):
 
 ```bash
-npm start        # ou : node themer.mjs   ou   double-clic sur start.bat
+npm start        # or: node themer.mjs   or   double-click start.bat
 ```
 
-Le choix des thèmes ne se fait plus dans le lanceur : il se fait
-**directement dans Freebuff** via le bouton 🎨 (Theme Engine).
+Theme selection no longer happens in the launcher: it happens **directly in
+Freebuff** via the 🎨 button (Theme Engine).
 
 ---
 
-## 4. Parcours VS0 — activer un thème depuis Freebuff
+## 4. VS0 walkthrough — activate a theme from Freebuff
 
-1. Dans le lanceur, cliquez **🎯 Patch Freebuff (injection)**.
-   - Si Freebuff tourne déjà, le lanceur affiche : **« Freebuff est déjà en
-     cours d'exécution : fermez-le, puis cliquez à nouveau sur Patch »**.
-   - Attendez le message « Freebuff est lancé avec l'injection ». Le lancement
-     peut prendre jusqu'à 45 s.
-2. Dans **Freebuff**, un bouton rond **🎨** apparaît en bas à droite.
-3. Cliquez **🎨** → le panneau **Theme Engine** s'ouvre :
-   - le statut doit afficher **« Injection active — 1 fenêtre »** (vert),
-   - la liste montre les thèmes : **Default, Dracula, Gruvbox, Nord,
+1. In the launcher, click **🎯 Patch Freebuff (injection)**.
+   - If Freebuff is already running, the launcher shows: **"Freebuff is
+     already running: close it, then click Patch again"**.
+   - Wait for the "Freebuff launched with the injection" message. Launching
+     can take up to 45 s.
+2. In **Freebuff**, a round **🎨** button appears at the bottom-right.
+3. Click **🎨** → the **Theme Engine** panel opens:
+   - the status must show **"Injection active — 1 window"** (green),
+   - the list shows the themes: **Default, Dracula, Gruvbox, Nord,
      Paper Light, Solarized Dark, Tokyo Night**.
-4. Cliquez **Activer** sur « Dracula » → **l'application change immédiatement**
-   (fond violet, texte clair, accent vert).
-5. Cliquez **Restaurer le look d'origine** → Freebuff redevient noir.
+4. Click **Activate** on "Dracula" → **the app changes immediately**
+   (purple background, light text, green accent).
+5. Click **Restore the original look** → Freebuff goes back to black.
 
-### À vérifier pendant le parcours VS0
+### What to check during the VS0 walkthrough
 
-| Vérification | Résultat attendu |
+| Check | Expected result |
 | --- | --- |
-| Activation d'un thème | Changement visuel immédiat dans Freebuff |
-| Le panneau liste les thèmes | 7 thèmes, avec pastilles de couleurs |
-| Statut du panneau | « Injection active — 1 fenêtre » (point vert) |
-| Restaurer | Freebuff retrouve son look d'origine |
+| Activating a theme | Immediate visual change in Freebuff |
+| The panel lists the themes | 7 themes, with color swatches |
+| Panel status | "Injection active — 1 window" (green dot) |
+| Restore | Freebuff gets its original look back |
 
 ---
 
-## 5. Parcours VS1 — l'éditeur de thème (le cœur de la slice)
+## 5. VS1 walkthrough — the theme editor (the heart of the slice)
 
-C'est ici que se prouve le Definition of Done : **modifier UNE valeur change
-plusieurs endroits cohérents de Freebuff**.
+This is where the Definition of Done is proven: **changing ONE value changes
+several coherent places in Freebuff**.
 
-1. Ouvrez le panneau **🎨** → cliquez **Modifier** sur « Default ».
-2. L'**Éditeur de thème** s'ouvre avec 6 couleurs (tokens) :
+1. Open the **🎨** panel → click **Edit** on "Default".
+2. The **Theme Editor** opens with 6 colors (tokens):
    **Background, Surface, Text, Muted Text, Border, Accent**.
-3. **Changez Accent** (cliquez sur la pastille et choisissez une autre couleur,
-   par exemple un rouge).
-4. **Sans rien sauvegarder**, regardez Freebuff : tout ce qui utilise
-   l'accent change **en direct** — boutons, liens, focus, états actifs.
-   Le texte « Aperçu en direct — non enregistré » s'affiche.
-5. Cliquez **Enregistrer** :
-   - le panneau revient à la liste,
-   - un nouveau thème **« Default (custom) »** apparaît, marqué
-     **« personnalisé »**, et il est **actif**,
-   - le thème « Default » d'origine **n'a pas été modifié**.
-6. Rouvrez **Modifier** sur « Default (custom) » → changez Background →
-   **Enregistrer** → le thème personnalisé est mis à jour, pas un doublon.
-7. Sur « Default (custom) », cliquez **Reset** → les couleurs reviennent à
-   celles de la base (Default), avec aperçu appliqué.
+3. **Change Accent** (click the swatch and pick another color, e.g. red).
+4. **Without saving anything**, look at Freebuff: everything driven by the
+   accent changes **live** — buttons, links, focus, active states. The
+   "Live preview — not saved" text appears.
+5. Click **Save**:
+   - the panel goes back to the list,
+   - a new **"Default (custom)"** theme appears, marked **"custom"**, and it
+     is **active**,
+   - the original "Default" theme **has not been modified**.
+6. Reopen **Edit** on "Default (custom)" → change Background → **Save** →
+   the custom theme is updated, not duplicated.
+7. On "Default (custom)", click **Reset** → the colors go back to the base
+   (Default), with the preview applied.
 
-### La preuve du DoD (à vérifier visuellement)
+### The DoD proof (check visually)
 
-Changez **uniquement** le token Accent et observez que **plusieurs endroits
-changent en même temps** dans Freebuff : c'est parce que le studio *génère*
-`--brand`, `--brand-dim`, `--ok`… à partir d'un seul token (le CSS n'est pas
-écrit à la main).
+Change **only** the Accent token and watch **several places change at the
+same time** in Freebuff: that is because the studio *generates*
+`--brand`, `--brand-dim`, `--ok`… from a single token (the CSS is not written
+by hand).
 
 ---
 
-## 5 bis. Parcours VS2 — personnalisation par composants
+## 5 bis. VS2 walkthrough — component customization
 
-Le but : passer du thème global à **contrôler l'interface composant par
-composant**.
+The goal: move from the global theme to **controlling the UI component by
+component**.
 
-1. Ouvrez le panneau **🎨** → **Modifier** sur un thème.
-2. Dans l'éditeur, descendez à la section **Components** :
+1. Open the **🎨** panel → **Edit** on a theme.
+2. In the editor, scroll down to the **Components** section:
    **Button, Input, Card, Sidebar, Modal**.
-3. Cliquez **Button** → le détail du composant s'ouvre :
-   - **Colors** : Background, Text, Border, Accent,
-   - **Border** : épaisseur,
-   - **Radius** : curseur 0–48 px,
-   - **Shadow** : Aucune / Légère / Moyenne / Forte.
-4. **Changez Background** (par exemple un rose) → **tous les boutons** de
-   Freebuff changent **en direct**. Les inputs, les cards et le reste de
-   l'application ne bougent pas : c'est l'**isolation entre composants**.
-5. Changez le **Radius** et l'**ombre** → mêmes effets, scopés au bouton.
-6. Revenez en arrière (←) et ouvrez **Input** → changez sa couleur → les
-   boutons **restent tels quels** (preuve du DoD : personnaliser un composant
-   n'affecte pas les autres).
-7. **Enregistrer** → le thème mémorise les overrides de composants.
-8. **Reset** → les composants reviennent aux tokens globaux du thème.
+3. Click **Button** → the component detail opens:
+   - **Colors**: Background, Text, Border, Accent,
+   - **Border**: width,
+   - **Radius**: 0–48 px slider,
+   - **Shadow**: None / Soft / Medium / Strong.
+4. **Change Background** (e.g. pink) → **all the buttons** in Freebuff change
+   **live**. Inputs, cards and the rest of the app do not move: that is
+   **isolation between components**.
+5. Change **Radius** and **Shadow** → same effect, scoped to buttons.
+6. Go back (←) and open **Input** → change its color → the buttons **stay as
+   they are** (DoD proof: customizing one component does not affect others).
+7. **Save** → the theme remembers the component overrides.
+8. **Reset** → the components go back to the theme's global tokens.
 
-> **Note d'architecture** : un composant = toutes ses instances (tous les
-> boutons ensemble) — c'est ce qui garantit la cohérence. La personnalisation
-> d'une *variante* précise (bouton primaire vs fantôme) viendra dans une
-> slice ultérieure. Les sélecteurs de composants sont regroupés dans
-> `lib/theme-model.mjs` pour être affinés quand le vrai DOM de Freebuff sera
-> connu.
+> **Architecture note**: a component = all its instances (all the buttons
+> together) — that is what keeps things consistent. Customizing a specific
+> *variant* (primary vs ghost button) will come in a later slice. The
+> component selectors live in `lib/theme-model.mjs` so they can be refined
+> once the real Freebuff DOM is known.
 
 ---
 
-## 6. Robustesse — persistance, reload, déconnexion
+## 6. Robustness — persistence, reload, disconnection
 
-| Scénario | Manipulation | Résultat attendu |
+| Scenario | Action | Expected result |
 | --- | --- | --- |
-| **Reload** | Dans Freebuff, appuyez sur `Ctrl+R` (recharger la page) | Le thème, les composants **et** le bouton 🎨 reviennent automatiquement |
-| **Fermeture** | Fermez Freebuff | Le studio indique « Freebuff is closed » |
-| **Relance** | Recliquez **Launch Freebuff with theming** | Le même thème revient, bouton 🎨 présent |
-| **Studio fermé** | Fermez l'onglet du studio puis relancez le `.exe`/`npm start` | Le thème actif est réappliqué tout seul |
-| **Thème persistant** | Enregistrez un thème custom, fermez Freebuff ET le studio, relancez les deux | Votre thème « … (custom) » est dans la liste et toujours actif |
-| **Déconnexion** | Fermez Freebuff pendant que le studio tourne | Le panneau du studio passe au jaune/rouge ; pas de plantage |
+| **Reload** | In Freebuff, press `Ctrl+R` (reload the page) | The theme, the components **and** the 🎨 button come back automatically |
+| **Close** | Close Freebuff | The panel shows "Freebuff is closed" |
+| **Relaunch** | Click **Patch Freebuff** again | The same theme comes back, 🎨 button present |
+| **Launcher closed** | Close the launcher, then relaunch the `.exe`/`npm start` | The active theme is re-applied by itself |
+| **Persistent theme** | Save a custom theme, close Freebuff AND the launcher, relaunch both | Your "… (custom)" theme is in the list and still active |
+| **Disconnection** | Close Freebuff while the launcher runs | The panel turns yellow/red; no crash |
 
 ---
 
-## 7. Checklist VS1 + VS2 (Definition of Done)
+## 7. VS1 + VS2 checklist (Definition of Done)
 
-- [ ] Ouvrir Freebuff → 🎨 → activer un thème → changement immédiat
-- [ ] Modifier un token (Accent) → plusieurs endroits cohérents changent
-- [ ] Aperçu en direct avant d'enregistrer
-- [ ] Enregistrer crée un thème « (custom) » sans écraser l'intégré
-- [ ] Reset ramène le thème (tokens **et** composants) à sa base
-- [ ] Customiser Button → les boutons changent, les inputs/cards non (VS2)
-- [ ] Customiser Input → les boutons ne bougent pas (VS2)
-- [ ] Changer le fond d'un bouton → les vrais boutons de Freebuff changent
-      (fond, texte, accent pilotent chacune la famille de variables que l'app
-      utilise réellement — vérifié sur le DOM réel : `--surface`/`--surface-2`/
-      `--raised` pour les fonds, `--text`/`--muted`/`--faint` pour les textes)
-- [ ] Le thème et ses composants survivent au rechargement de la page
-- [ ] Restaurer le look d'origine fonctionne
+- [ ] Open Freebuff → 🎨 → activate a theme → immediate change
+- [ ] Edit a token (Accent) → several coherent places change
+- [ ] Live preview before saving
+- [ ] Saving creates a "(custom)" theme without overwriting the built-in
+- [ ] Reset returns the theme (tokens **and** components) to its base
+- [ ] Customize Button → buttons change, inputs/cards do not (VS2)
+- [ ] Customize Input → buttons do not move (VS2)
+- [ ] Change a button's background → the real Freebuff buttons change
+      (background, text and accent each drive the family of variables the app
+      actually uses — verified on the real DOM: `--surface`/`--surface-2`/
+      `--raised` for backgrounds, `--text`/`--muted`/`--faint` for texts)
+- [ ] The theme and its components survive a page reload
+- [ ] Restore the original look works
 
 ---
 
-## 8. Si quelque chose ne va pas
+## 8. If something goes wrong
 
-- **« Freebuff is already open »** : fermez Freebuff, attendez 2 s, relancez.
-- **« Freebuff is running without the debug port »** : Freebuff a été lancé
-  hors du studio. Fermez-le et relancez-le depuis le studio.
-- **Le bouton 🎨 n'apparaît pas** : le lanceur affiche le message d'erreur du
-  patch ; le détail de chaque étape est écrit dans
+- **"Freebuff is already open"** : close Freebuff, wait 2 s, try again.
+- **"Freebuff is running without the debug port"** : Freebuff was started
+  outside the launcher. Close it and relaunch it from the launcher.
+- **The 🎨 button does not appear** : the launcher shows the patch error
+  message; every step is written to
   `%APPDATA%\freebuff-themer\launch-trace.log`.
-- **Processus fantômes** : le bouton **Clean up leftover Freebuff processes**
-  du studio les supprime.
-- **Le panneau affiche « Studio hors ligne »** : le studio n'est pas lancé.
-  Relancez l'exe ou `npm start`.
-- **Une fenêtre de terminal clignote toutes les ~2 s** : c'est l'ancienne
-  détection « Freebuff tourne ? » qui lançait `tasklist` (une app console) à
-  chaque sondage du lanceur — Windows Terminal s'ouvrait à chaque appel.
-  Corrigé depuis (exécution invisible), mais : (1) assurez-vous d'utiliser la
-  version reconstruite de l'exe, (2) fermez toutes les instances de
-  `CustomFreebuff.exe` en double avant de relancer — le lanceur est
-  mono-instance : un second double-clic sort silencieusement.
+- **Ghost processes** : the **Clean up leftover processes** button in the
+  launcher removes them.
+- **The panel shows "Studio offline"** : the launcher is not running.
+  Relaunch the exe or `npm start`.
+- **A terminal window flashes every ~2 s** : that was the old "is Freebuff
+  running?" check spawning `tasklist` (a console app) on every launcher
+  poll — Windows Terminal opened every time. Fixed since (invisible
+  execution), but: (1) make sure you use the rebuilt exe, (2) close any
+  duplicate `CustomFreebuff.exe` instances before relaunching — the launcher
+  is single-instance: a second double-click exits silently.
 
 ---
 
-## 9. Reconstruire le `.exe` après une modification
+## 9. Rebuilding the `.exe` after a change
 
-Le `.exe` embarque le code **et** les thèmes/la page du studio. Après toute
-modification du code ou des thèmes, reconstruisez-le :
+The `.exe` embeds the code **and** the themes/launcher page. After any code
+or theme change, rebuild it:
 
 ```bash
 node scripts/build-exe.mjs
 ```
 
-→ produit `dist\CustomFreebuff.exe` (≈ 96 Mo, autonome). Le script trouve
-Bun automatiquement dans les ressources de Freebuff Desktop ; sinon installez
-Bun (`https://bun.sh`) ou définissez `BUN` en variable d'environnement.
+→ produces `dist\CustomFreebuff.exe` (≈ 96 MB, self-contained). The script
+finds Bun automatically in the Freebuff Desktop resources; otherwise install
+Bun (`https://bun.sh`) or set the `BUN` environment variable.

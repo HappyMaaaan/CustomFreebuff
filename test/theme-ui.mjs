@@ -391,7 +391,7 @@ async function main() {
     check('le lien (--brand) change aussi — 1 token, plusieurs endroits', accentChange?.linkColor === 'rgb(255, 0, 0)', accentChange?.linkColor)
 
     const previewStatus = await evalOn(client, `${SHADOW}.getElementById('fbt-edit-status').textContent`)
-    check('l\u2019état signale un aperçu non enregistré', /Aper\u00e7u en direct/.test(previewStatus || ''), previewStatus)
+    check('the state reports an unsaved live preview', /Live preview/.test(previewStatus || ''), previewStatus)
 
     // 8. Enregistrer → crée un thème utilisateur dérivé et l'active.
     await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
@@ -497,7 +497,7 @@ async function main() {
     // 14. Retour à la liste des composants : le résumé reflète les overrides.
     await evalOn(client, `${SHADOW}.getElementById('fbt-comp-back').click()`)
     const compSummary = await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"] .fbt-comp-summary').textContent`)
-    check('le résumé du bouton reflète les overrides', /3 r\u00e9glages modifi\u00e9s/.test(compSummary || ''), compSummary)
+    check('the button summary reflects the overrides', /3 settings modified/.test(compSummary || ''), compSummary)
 
     // 15. Modifier l'input → le bouton ne bouge pas (DoD).
     await evalOn(client, `${SHADOW}.querySelector('[data-comp="input"]').click()`)
