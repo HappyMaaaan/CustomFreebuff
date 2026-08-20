@@ -5,6 +5,15 @@ notes on GitHub are generated from this file.
 
 ## v1.4.0 — 2026-08-19
 
+### macOS app 🍎
+
+- **CustomFreebuff now ships for Mac too**: download
+  `CustomFreebuff-mac-arm64.zip` (Apple Silicon) or
+  `CustomFreebuff-mac-x64.zip` (Intel), unzip, drag **CustomFreebuff.app** to
+  Applications and double-click — no Node, no terminal, no commands.
+- Built by cross-compiling genuine Mach-O binaries with Bun, so the Mac
+  download is produced from any machine (and by the release workflow).
+
 ### Redesigned interface 🎨
 
 - **A cleaner, more navigable panel**: new header with the app name, a

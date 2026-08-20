@@ -24,11 +24,33 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
-const ASSET = path.join(ROOT, 'dist', 'CustomFreebuff.exe')
 const REPO = 'HappyMaaaan/CustomFreebuff'
 const TAG_ARG = process.argv[2] || null
 let TAG = TAG_ARG
 const NOTES_FILE = process.argv[3] ? path.resolve(process.argv[3]) : null
+
+/** The distributable artifacts present in dist/: the Windows exe (when the
+ *  Windows build ran) and every CustomFreebuff-mac-*.zip (macOS apps). */
+function distAssets() {
+  const dist = path.join(ROOT, 'dist')
+  const out = []
+  const exe = path.join(dist, 'CustomFreebuff.exe')
+  if (fs.existsSync(exe)) out.push(exe)
+  if (fs.existsSync(dist)) {
+    for (const f of fs.readdirSync(dist)) {
+      if (/^CustomFreebuff-mac-(arm64|x64)\.zip$/.test(f)) out.push(path.join(dist, f))
+    }
+  }
+  return out
+}
+
+function assetLabel(file) {
+  const name = path.basename(file)
+  if (name === 'CustomFreebuff.exe') return 'CustomFreebuff (Windows x64)'
+  if (name.includes('arm64')) return 'CustomFreebuff (macOS - Apple Silicon)'
+  if (name.includes('x64')) return 'CustomFreebuff (macOS - Intel)'
+  return name
+}
 
 function getToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN
@@ -137,12 +159,15 @@ function releaseBody(tag) {
   return `## CustomFreebuff ${tag}\n\nSee CHANGELOG.md for what changed in this version.`
 }
 
-async function uploadAsset(token, release) {
-  const data = fs.readFileSync(ASSET)
-  await deleteExistingAsset(token, release, 'CustomFreebuff.exe')
-  await deleteExistingAsset(token, release, 'FreebuffThemer.exe') // legacy name from earlier releases
+async function uploadAsset(token, release, file) {
+  const name = path.basename(file)
+  const data = fs.readFileSync(file)
+  await deleteExistingAsset(token, release, name)
+  if (name === 'CustomFreebuff.exe') {
+    await deleteExistingAsset(token, release, 'FreebuffThemer.exe') // legacy name from earlier releases
+  }
   const uploadUrl = release.uploadUrl.replace('{?name,label}', '')
-  const target = `${uploadUrl}?name=${encodeURIComponent('CustomFreebuff.exe')}&label=${encodeURIComponent('CustomFreebuff (Windows x64)')}`
+  const target = `${uploadUrl}?name=${encodeURIComponent(name)}&label=${encodeURIComponent(assetLabel(file))}`
 
   // GitHub redirects to a signed upload URL. Manual redirect keeps the POST
   // method and the body (automatic redirect would turn it into a GET).
@@ -173,8 +198,9 @@ async function uploadAsset(token, release) {
   return json.browser_download_url
 }
 
-if (!fs.existsSync(ASSET)) {
-  console.error('dist/CustomFreebuff.exe not found. Run `node scripts/build-exe.mjs` first.')
+const ASSETS = distAssets()
+if (ASSETS.length === 0) {
+  console.error('Nothing to upload. Run `node scripts/build-exe.mjs` and/or `node scripts/build-mac.mjs` first (dist/ is empty of release artifacts).')
   process.exit(1)
 }
 
@@ -215,7 +241,11 @@ if (release) {
   release.assets = []
 }
 
-const downloadUrl = await uploadAsset(token, release)
+const downloadUrls = []
+for (const asset of ASSETS) {
+  const url = await uploadAsset(token, release, asset)
+  downloadUrls.push(url)
+}
 console.log('')
 console.log(`Done. Release: ${release.url}`)
-console.log(`Asset: ${downloadUrl}`)
+for (const url of downloadUrls) console.log(`Asset: ${url}`)

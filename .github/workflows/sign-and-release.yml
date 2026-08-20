@@ -1,9 +1,10 @@
 name: Build, sign & release
 
 # Manual trigger only: nothing runs automatically until you click
-# "Run workflow" in the Actions tab. Builds the standalone .exe on a clean
-# Windows machine, signs it if a code-signing certificate is configured as a
-# repository secret, and uploads it to the GitHub release.
+# "Run workflow" in the Actions tab. Builds the standalone .exe AND the
+# macOS .app zips (Apple Silicon + Intel, cross-compiled) on a clean
+# Windows machine, signs the exe if a code-signing certificate is configured
+# as a repository secret, and uploads everything to the GitHub release.
 #
 # To sign, add these repository secrets (Settings → Secrets and variables →
 # Actions), then run this workflow:
@@ -32,6 +33,11 @@ jobs:
       - name: Build the standalone exe
         run: node scripts/build-exe.mjs
 
+      - name: Build the macOS apps (Apple Silicon + Intel)
+        # Bun cross-compiles genuine Mach-O binaries from any host; the zip
+        # writer stores the unix exec bit, so the .app is double-clickable.
+        run: node scripts/build-mac.mjs all
+
       - name: Sign the exe
         if: ${{ env.HAS_CERT == 'true' }}
         env:
@@ -40,7 +46,7 @@ jobs:
           CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
         run: node scripts/sign-exe.mjs --require
 
-      - name: Create / update the GitHub release
+      - name: Create / update the GitHub release (exe + macOS zips)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/gh-release.mjs ${{ github.event.inputs.tag }}

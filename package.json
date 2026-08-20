@@ -13,8 +13,9 @@
   },
   "scripts": {
     "start": "node themer.mjs",
-    "check": "node --check themer.mjs && node --check lib/cdp.mjs && node --check lib/launcher.mjs && node --check lib/win.mjs && node --check lib/theme-model.mjs && node --check lib/theme-store.mjs && node --check lib/themeui.mjs && node --check scripts/sign-exe.mjs && echo OK",
+    "check": "node --check themer.mjs && node --check lib/cdp.mjs && node --check lib/launcher.mjs && node --check lib/win.mjs && node --check lib/theme-model.mjs && node --check lib/theme-store.mjs && node --check lib/themeui.mjs && node --check scripts/build-mac.mjs && node --check scripts/build-exe.mjs && node --check scripts/gh-release.mjs && node --check scripts/make-icon.mjs && node --check scripts/sign-exe.mjs && echo OK",
     "test": "node test/e2e.mjs && node test/theme-model.mjs && node test/theme-ui.mjs && node test/watcher.mjs",
-    "sign": "node scripts/sign-exe.mjs"
+    "sign": "node scripts/sign-exe.mjs",
+    "build:mac": "node scripts/build-mac.mjs"
   }
 }

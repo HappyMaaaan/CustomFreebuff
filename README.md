@@ -32,7 +32,23 @@ to install, and **no console window** — only the small launcher window appears
 Double-click `start.bat` (requires Node.js). It launches the themer hidden (no
 console window), so only the launcher window is visible.
 
-### macOS / Linux
+### macOS — standalone app (no Node needed)
+
+Download the zip that matches your Mac from a release page:
+
+- **`CustomFreebuff-mac-arm64.zip`** — Apple Silicon (M1/M2/M3/M4…)
+- **`CustomFreebuff-mac-x64.zip`** — Intel
+
+Unzip (double-click the zip), drag **CustomFreebuff.app** to Applications,
+then double-click it. No Node, no terminal, no commands — the studio opens in
+your browser and the Theme Engine works exactly like on Windows.
+
+First launch shows *"CustomFreebuff cannot be opened because the developer
+cannot be verified"* — that is normal for an unsigned app downloaded from
+the internet (same story as SmartScreen on Windows). Right-click the app →
+**Open** → **Open** once, and it will run normally afterwards.
+
+### macOS / Linux — from source
 
 ```bash
 ./start.sh
@@ -58,6 +74,23 @@ environment variable, `bun` on PATH, or the bun binary bundled with Freebuff
 Desktop itself — so you usually do not need to install anything extra.
 The studio page and the themes are inlined into the executable, so the file
 works on its own, anywhere.
+
+## Building the macOS app
+
+```bash
+node scripts/build-mac.mjs
+```
+
+Produces `dist/CustomFreebuff-mac-arm64.zip` and `dist/CustomFreebuff-mac-x64.zip`
+(each a proper `CustomFreebuff.app` bundle). On a Mac the build compiles
+natively and ad-hoc signs the bundle; from Windows/Linux it **cross-compiles**
+genuine Mach-O binaries with Bun (`--target=bun-darwin-<arch>`), so you do not
+need a Mac to produce the download. The zip stores the unix permissions, so
+the app stays executable after extraction.
+
+Like the exe, the app is **not notarized** (no Apple Developer account), hence
+the right-click → Open on first launch. Real Developer ID signing +
+notarization would remove it.
 
 ## Code signing & SmartScreen
 
