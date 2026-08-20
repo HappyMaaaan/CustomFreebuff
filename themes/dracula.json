@@ -1,7 +1,7 @@
 {
   "id": "dracula",
   "name": "Dracula",
-  "description": "The famous dark purple theme, high contrast.",
+  "description": "The famous dark purple theme, high contrast — now with depth, subtle glass and smooth motion.",
   "colorScheme": "dark",
   "base": "default",
   "tokens": {
@@ -12,5 +12,59 @@
     "border": "#44475a",
     "accent": "#50fa7b"
   },
-  "extraCss": ""
+  "shape": {
+    "radius": 10,
+    "borderWidth": 1,
+    "borderOpacity": 1
+  },
+  "shadow": {
+    "layers": [
+      {
+        "x": 0,
+        "y": 2,
+        "blur": 10,
+        "spread": 0,
+        "color": "#000000",
+        "opacity": 0.18,
+        "inner": false
+      }
+    ]
+  },
+  "effects": {
+    "enabled": true,
+    "mode": "subtle",
+    "transparency": 0.95,
+    "blur": 4,
+    "saturation": 1.05,
+    "brightness": 1,
+    "borderTranslucency": 0.7,
+    "glow": 0,
+    "gradient": 0,
+    "grain": 0,
+    "performance": "auto"
+  },
+  "motion": {
+    "preset": "smooth",
+    "duration": 200,
+    "easing": "ease-out",
+    "delay": 0,
+    "hover": {
+      "translateY": -2,
+      "scale": 1.02
+    },
+    "active": {
+      "scale": 0.97
+    },
+    "focus": {
+      "scale": 1.01
+    },
+    "enter": true,
+    "global": {
+      "speed": 1,
+      "intensity": 1,
+      "reduced": "auto"
+    }
+  },
+  "extraCss": "",
+  "cssScope": "app"
 }

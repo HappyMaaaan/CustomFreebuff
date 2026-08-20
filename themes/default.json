@@ -1,7 +1,7 @@
 {
   "id": "default",
   "name": "Default",
-  "description": "Freebuff's original look — the base every theme derives from.",
+  "description": "Freebuff's original look — the base every theme derives from, refreshed with a subtle modern baseline.",
   "colorScheme": "dark",
   "base": "default",
   "tokens": {
@@ -12,5 +12,59 @@
     "border": "#2a2a2e",
     "accent": "#7cff3f"
   },
-  "extraCss": ""
+  "shape": {
+    "radius": 6,
+    "borderWidth": 1,
+    "borderOpacity": 1
+  },
+  "shadow": {
+    "layers": [
+      {
+        "x": 0,
+        "y": 2,
+        "blur": 10,
+        "spread": 0,
+        "color": "#000000",
+        "opacity": 0.15,
+        "inner": false
+      }
+    ]
+  },
+  "effects": {
+    "enabled": false,
+    "mode": "none",
+    "transparency": 1,
+    "blur": 0,
+    "saturation": 1,
+    "brightness": 1,
+    "borderTranslucency": 1,
+    "glow": 0,
+    "gradient": 0,
+    "grain": 0,
+    "performance": "auto"
+  },
+  "motion": {
+    "preset": "minimal",
+    "duration": 0,
+    "easing": "ease",
+    "delay": 0,
+    "hover": {
+      "translateY": 0,
+      "scale": 1
+    },
+    "active": {
+      "scale": 1
+    },
+    "focus": {
+      "scale": 1
+    },
+    "enter": false,
+    "global": {
+      "speed": 1,
+      "intensity": 1,
+      "reduced": "auto"
+    }
+  },
+  "extraCss": "",
+  "cssScope": "app"
 }

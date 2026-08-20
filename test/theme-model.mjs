@@ -46,11 +46,14 @@ import {
   resolveShapePreset,
   sanitizeCustomCss,
   scopeCss,
+  serializeTheme,
   shadowToCss,
+  slugifyName,
   themeToCss,
   tokenVars,
   validEasing,
   validateCustomCss,
+  parseThemeFile,
 } from '../lib/theme-model.mjs'
 import { listUserThemes, readUserTheme, safeThemeId, saveUserTheme, userThemesDir } from '../lib/theme-store.mjs'
 
@@ -158,7 +161,8 @@ check('sans override, aucun composant n\u2019émet de règle', componentCss({}) 
 
 // 11. Shadow presets are data.
 const ccShadow = componentCss({ card: { shadow: 'strong' } })
-check('le preset shadow génère box-shadow', ccShadow.includes('.card, .bubble, .msg{box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important}'), ccShadow)
+check('le preset shadow génère box-shadow', ccShadow.includes('.card{box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important}'), ccShadow)
+check('le composant card ne touche plus les messages de chat', !ccShadow.includes('.bubble') && !ccShadow.includes('.msg'), ccShadow)
 const ccNone = componentCss({ card: { shadow: 'none' } })
 check('shadow "none" est explicite', ccNone.includes('box-shadow: none !important'), ccNone)
 
@@ -333,7 +337,8 @@ const cssShape = themeToCss({
 })
 check('les variables --fbt-* sont émises dans :root', cssShape.includes('--fbt-radius: 14px') && cssShape.includes('--fbt-border-width: 2px') && cssShape.includes('--fbt-border-opacity: 0.5'), cssShape.slice(0, 200))
 check('l\u2019ombre multi-couches est émise', cssShape.includes('--fbt-shadow: 0px 10px 28px -6px rgba(0, 0, 0, 0.4) !important'), cssShape)
-check('la règle shape globale s\u2019applique aux surfaces', cssShape.includes('button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"]{border-radius: var(--fbt-radius) !important;border-width: var(--fbt-border-width) !important;border-color: rgba(42, 42, 46, 0.5) !important;box-shadow: var(--fbt-shadow) !important}'), cssShape)
+check('la règle shape globale s\u2019applique aux surfaces', cssShape.includes('button,input,textarea,select,.card,aside,.sidebar,.modal,[role="dialog"]{border-radius: var(--fbt-radius) !important;border-width: var(--fbt-border-width) !important;border-color: rgba(42, 42, 46, 0.5) !important;box-shadow: var(--fbt-shadow) !important}'), cssShape)
+check('les messages de chat ne sont plus des surfaces (ni ombre, ni glass, ni rayon)', !cssShape.includes('.bubble') && !cssShape.includes('.msg'), cssShape)
 check('la règle shape est AVANT les règles composants', cssShape.indexOf('{border-radius: var(--fbt-radius)') < cssShape.indexOf('button{border-radius: 4px !important}'), cssShape)
 
 // 28. 0 = inherit: with the default shape, NO shape rule is emitted — the app
@@ -362,7 +367,7 @@ check('une couche invalide ne survit pas au round-trip', nt5.shadow.layers.lengt
 /* ------------------------------------------------------------------ */
 
 // The glass rule targets the same surface selector list as the shape rule.
-const SHAPE_SELECTORS_CHECK = 'button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"]'
+const SHAPE_SELECTORS_CHECK = 'button,input,textarea,select,.card,aside,.sidebar,.modal,[role="dialog"]'
 
 // 30. The five effect presets exist with the spec names.
 check('les 5 presets d\u2019effets existent', Object.keys(EFFECT_PRESETS).join(',') === 'none,subtle,frosted,strong,important')
@@ -461,9 +466,10 @@ const cssMotion = themeToCss({
   motion: MOTION_PRESETS.smooth,
 })
 check('motion → transition sur les surfaces', cssMotion.includes('{transition: background-color 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out, transform 200ms ease-out, backdrop-filter 200ms ease-out, opacity 200ms ease-out !important;transition-delay: 0ms !important}'), cssMotion)
-check('motion → hover transformé (translateY + scale)', cssMotion.includes('button:hover, input:hover, textarea:hover, select:hover, .card:hover, .bubble:hover, .msg:hover, aside:hover, .sidebar:hover, .modal:hover, [role="dialog"]:hover{transform: translateY(-2px) scale(1.02) !important}'), cssMotion)
-check('motion → active écrasé', cssMotion.includes('button:active, input:active, textarea:active, select:active, .card:active, .bubble:active, .msg:active, aside:active, .sidebar:active, .modal:active, [role="dialog"]:active{transform: scale(0.97) !important}'), cssMotion)
-check('motion → focus (souris + clavier)', cssMotion.includes('button:focus, button:focus-visible, input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select:focus, select:focus-visible, .card:focus, .card:focus-visible, .bubble:focus, .bubble:focus-visible, .msg:focus, .msg:focus-visible, aside:focus, aside:focus-visible, .sidebar:focus, .sidebar:focus-visible, .modal:focus, .modal:focus-visible, [role="dialog"]:focus, [role="dialog"]:focus-visible{transform: scale(1.01) !important}'), cssMotion)
+check('motion → hover transformé (translateY + scale)', cssMotion.includes('button:hover, input:hover, textarea:hover, select:hover{transform: translateY(-2px) scale(1.02) !important}'), cssMotion)
+check('motion → active écrasé', cssMotion.includes('button:active, input:active, textarea:active, select:active{transform: scale(0.97) !important}'), cssMotion)
+check('motion → focus (souris + clavier)', cssMotion.includes('button:focus, button:focus-visible, input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select:focus, select:focus-visible{transform: scale(1.01) !important}'), cssMotion)
+check('les containers et messages ne reçoivent aucun transform', cssMotion.includes('.card:hover') === false && cssMotion.includes('.bubble:hover') === false && cssMotion.includes('aside:hover') === false, cssMotion)
 check('motion → animation d\u2019entrée des messages', cssMotion.includes('@keyframes fbt-enter') && cssMotion.includes('.bubble, .msg, [data-message]{animation: fbt-enter 200ms ease-out both !important}'), cssMotion)
 check('les règles motion sont scopées aux surfaces', cssMotion.includes('\n:hover{') === false && cssMotion.includes('\n:active{') === false, cssMotion)
 
@@ -626,7 +632,7 @@ const ntCss = normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS, extraCss: '.a { 
 check('normalizeTheme conserve extraCss et cssScope', ntCss.extraCss === '.a { color: red }' && ntCss.cssScope === 'surfaces')
 check('cssScope par défaut → app', normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS }).cssScope === 'app')
 const scopedOut = themeToCss({ colorScheme: 'dark', tokens: DEFAULT_TOKENS, extraCss: '.a { color: red }', cssScope: 'surfaces' })
-check('themeToCss applique le scoping quand cssScope=surfaces', scopedOut.includes('button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"] .a{ color: red }'), scopedOut.slice(-90))
+check('themeToCss applique le scoping quand cssScope=surfaces', scopedOut.includes('button,input,textarea,select,.card,aside,.sidebar,.modal,[role="dialog"] .a{ color: red }'), scopedOut.slice(-90))
 const appOut = themeToCss({ colorScheme: 'dark', tokens: DEFAULT_TOKENS, extraCss: '.a { color: red }' })
 check('cssScope=app → CSS tel quel, en fin de feuille', appOut.endsWith('.a { color: red }'))
 
@@ -637,6 +643,46 @@ check('le "<" est supprimé', !clean.includes('<'))
 check('@import est supprimé', !clean.includes('@import'))
 check('javascript: est supprimé', !clean.includes('javascript:'))
 check('normalizeTheme nettoie l\u2019extraCss', !normalizeTheme({ id: 'x', tokens: DEFAULT_TOKENS, extraCss: dirty }).extraCss.includes('<'))
+
+/* ------------------------------------------------------------------ */
+/* VS11 — theme import / export                                        */
+/* ------------------------------------------------------------------ */
+
+// 59. serializeTheme produces the portable .freebuff envelope.
+const exportTheme = {
+  id: 'my-theme',
+  name: 'My Theme!',
+  colorScheme: 'dark',
+  tokens: { ...DEFAULT_TOKENS, accent: '#123456' },
+  components: { button: { background: '#abcdef', radius: 12 } },
+  extraCss: '.x { color: var(--theme-accent) }',
+}
+const fileText = serializeTheme(exportTheme)
+const parsedEnvelope = JSON.parse(fileText)
+check('le fichier .freebuff a l\u2019enveloppe format + version', parsedEnvelope.format === 'customfreebuff-theme' && parsedEnvelope.version === 1, JSON.stringify(Object.keys(parsedEnvelope)))
+check('le thème exporté est normalisé (tokens complétés)', parsedEnvelope.theme.tokens.accent === '#123456' && parsedEnvelope.theme.tokens.surface === DEFAULT_TOKENS.surface)
+check('l\u2019export conserve composants + CSS custom', parsedEnvelope.theme.components.button.background === '#abcdef' && parsedEnvelope.theme.extraCss.includes('var(--theme-accent)'))
+
+// 60. parseThemeFile — round-trip: an export re-imports identically.
+const rt = parseThemeFile(fileText)
+check('round-trip export → import ok', rt.ok && rt.theme.tokens.accent === '#123456' && rt.theme.components.button.radius === 12, JSON.stringify(rt))
+check('le nom du thème est conservé', rt.name === 'My Theme!', rt.name)
+
+// 61. Validation: each bad input has a stable error code + message.
+check('JSON invalide → invalid-json', parseThemeFile('not json {').code === 'invalid-json')
+check('enveloppe inconnue → wrong-format', parseThemeFile(JSON.stringify({ format: 'other-thing', version: 1, theme: {} })).code === 'wrong-format')
+check('version future → newer-version', parseThemeFile(JSON.stringify({ format: 'customfreebuff-theme', version: 99, theme: { tokens: DEFAULT_TOKENS } })).code === 'newer-version')
+check('version invalide → invalid-version', parseThemeFile(JSON.stringify({ format: 'customfreebuff-theme', version: 'x', theme: { tokens: DEFAULT_TOKENS } })).code === 'invalid-version')
+check('enveloppe sans thème → wrong-format', parseThemeFile(JSON.stringify({ format: 'customfreebuff-theme', version: 1 })).code === 'wrong-format')
+check('un JSON quelconque sans tokens → wrong-format', parseThemeFile(JSON.stringify({ foo: 1 })).code === 'wrong-format')
+check('un thème nu (raw JSON) est accepté', parseThemeFile(JSON.stringify({ name: 'Bare', tokens: { ...DEFAULT_TOKENS, accent: '#00ff88' } })).ok === true)
+const bare = parseThemeFile(JSON.stringify({ tokens: { ...DEFAULT_TOKENS, accent: '#00ff88' } }))
+check('un thème nu garde le nom par défaut du modèle', bare.ok && bare.name === 'Theme', bare.name)
+check('version 1 implicite quand absente', parseThemeFile(JSON.stringify({ format: 'customfreebuff-theme', theme: { tokens: DEFAULT_TOKENS } })).ok === true)
+
+// 62. slugifyName builds portable file names.
+check('slugifyName: accents + espaces → tirets', slugifyName('Été Theme!') === 'ete-theme')
+check('slugifyName: fallback', slugifyName('') === 'theme')
 
 console.log('')
 if (failures) {

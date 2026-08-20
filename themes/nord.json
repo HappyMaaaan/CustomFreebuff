@@ -1,7 +1,7 @@
 {
   "id": "nord",
   "name": "Nord",
-  "description": "Soft arctic palette, easy on the eyes.",
+  "description": "Soft arctic palette, easy on the eyes — cool glass and calm motion.",
   "colorScheme": "dark",
   "base": "default",
   "tokens": {
@@ -12,5 +12,59 @@
     "border": "#4c566a",
     "accent": "#88c0d0"
   },
-  "extraCss": "/* Slightly brighter hover on interactive elements */\nbutton:hover { filter: brightness(1.08); }"
+  "shape": {
+    "radius": 8,
+    "borderWidth": 1,
+    "borderOpacity": 1
+  },
+  "shadow": {
+    "layers": [
+      {
+        "x": 0,
+        "y": 2,
+        "blur": 10,
+        "spread": 0,
+        "color": "#000000",
+        "opacity": 0.16,
+        "inner": false
+      }
+    ]
+  },
+  "effects": {
+    "enabled": true,
+    "mode": "subtle",
+    "transparency": 0.96,
+    "blur": 6,
+    "saturation": 1.03,
+    "brightness": 1,
+    "borderTranslucency": 0.7,
+    "glow": 0,
+    "gradient": 0,
+    "grain": 0,
+    "performance": "auto"
+  },
+  "motion": {
+    "preset": "smooth",
+    "duration": 220,
+    "easing": "ease-out",
+    "delay": 0,
+    "hover": {
+      "translateY": -2,
+      "scale": 1.02
+    },
+    "active": {
+      "scale": 0.97
+    },
+    "focus": {
+      "scale": 1.01
+    },
+    "enter": true,
+    "global": {
+      "speed": 1,
+      "intensity": 1,
+      "reduced": "auto"
+    }
+  },
+  "extraCss": "",
+  "cssScope": "app"
 }

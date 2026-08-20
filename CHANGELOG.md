@@ -3,6 +3,98 @@
 All notable changes to CustomFreebuff, one section per release. The release
 notes on GitHub are generated from this file.
 
+## v1.4.0 — 2026-08-19
+
+### Redesigned interface 🎨
+
+- **A cleaner, more navigable panel**: new header with the app name, a
+  **bottom navigation** between *Themes* and *Editor*, and a **tab bar**
+  inside the editor (Colors / Components / Shape / Effects / Motion /
+  Advanced) so each section gets its own space — no more scrolling through
+  everything at once.
+- **Hidden tabs stay live**: switching sections keeps every control
+  functional, and the editor remembers the section you were on.
+- **Fixed**: closing the editor now really closes it — the session and the
+  bottom navigation return to the theme list consistently.
+
+### Manage your themes ✂️
+
+- **User themes can be deleted**: themes you created or imported get a
+  delete button (first click asks *“Sure?”* — no accidental removal).
+  Official themes are protected and never show the button.
+- **Deleting the active theme** returns Freebuff to its original look
+  automatically.
+
+### Fresh official themes 🌈
+
+- All built-in themes were rebuilt to use the full modern feature set
+  (shapes & shadows, effects, motion).
+- **2 new official themes**: **Neon Pink** 🌸 (a pink accent on dark) and
+  **Midnight** 🌙 (a deep blue night look).
+
+### Calmer surfaces 🌊
+
+- **Chat messages are no longer themeable surfaces**: the AI chat (its
+  messages are `.bubble`/`.msg` elements) keeps its own look — no more
+  shadows on every message, no glass, no radius, no hover growth, no
+  blurry text when the pointer moves over the conversation.
+- **Only interactive controls animate on hover**: buttons, inputs,
+  textareas and selects express the motion personality; containers
+  (sidebars, cards, modals, panels) never scale or move on hover.
+- **Softer official themes**: the built-in themes now use light elevation
+  shadows and subtler glass instead of heavy floating shadows and strong
+  blur — the interface stays readable and calm out of the box.
+
+### Theme Creation ✨
+
+- **Create a brand-new theme from the list**: a **+ Create theme** button
+  opens a small dialog where you name the theme and pick its **base** —
+  from **scratch**, from **Default**, or from **any existing theme**
+  (built-in or your own).
+- **The editor opens on the new theme immediately**, pre-filled with the
+  base's values, ready to customize — then **Save** keeps it as a separate
+  theme, next to the others.
+- **Nothing is ever overwritten**: every new theme gets its own unique id
+  and its own entry — creating a theme derived from Dracula leaves Dracula
+  (and everything else) untouched.
+
+### Undo / Redo + History ↩️
+
+- **Undo and Redo everywhere**: every change in the editor — tokens,
+  components, states, shape, effects, motion, custom CSS, the element
+  inspector — is recorded as a step you can go back to, with the
+  **Undo / Redo buttons** in the editor header or the
+  **Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y** shortcuts.
+- **One gesture = one step**: dragging a slider, picking a color or typing
+  a burst of CSS records a single undo step — never one per pixel or per
+  keystroke. Inside the CSS editor, Ctrl+Z keeps the textarea's native
+  text undo, which lands in the history as a normal change.
+- **History list**: a dropdown under the editor header lists every step by
+  name (Accent, Button · Radius, Preset — Floating, Custom CSS, …) with
+  the current state marked — click any step to jump back or forward to it.
+- **All resets are undoable**: the new per-property **↺ Reset** buttons in
+  the component editor and the inspector, plus Reset component, Reset
+  state, Reset custom CSS and the theme Reset — experiment freely without
+  fear of breaking a theme.
+- Saving a theme is the new baseline: the history clears, and re-opening
+  the editor starts fresh. The last CSS keystroke is never lost on save.
+
+### Theme Import / Export 📦
+
+- **Export any theme as a portable `.freebuff` file**: one click in the
+  editor downloads the whole theme — tokens, components, states, shape,
+  effects, motion and custom CSS — as a single JSON document.
+- **Import themes from the list**: pick a `.freebuff` (or raw theme JSON)
+  file and it is **validated** — JSON syntax, file format, version and
+  compatibility — before being **installed** as a new theme, available in
+  the list alongside the built-ins, never overwriting anything.
+- **Clear error handling**: an invalid file, a foreign format or a theme
+  created with a **newer version** of CustomFreebuff is rejected with an
+  explicit message in the panel.
+- **Backward compatible**: raw theme JSON shared before `.freebuff`
+  existed is still accepted, and the format carries a version number for
+  the future (assets are reserved in the envelope).
+
 ## v1.3.0 — 2026-08-19
 
 ### Motion Engine 🎬

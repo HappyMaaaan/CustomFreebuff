@@ -20,8 +20,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadAssets } from './lib/assets.mjs'
-import { DEFAULT_TOKENS, normalizeTheme, themeToCss } from './lib/theme-model.mjs'
-import { listUserThemes, readUserTheme, saveUserTheme } from './lib/theme-store.mjs'
+import { DEFAULT_TOKENS, normalizeTheme, parseThemeFile, serializeTheme, slugifyName, themeToCss } from './lib/theme-model.mjs'
+import { deleteUserTheme, listUserThemes, readUserTheme, saveUserTheme } from './lib/theme-store.mjs'
 import {
   bringAppWindowToFront,
   findFreePort,
@@ -458,6 +458,50 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, theme: { ...theme, builtin: false }, isNew })
   }
 
+  // VS12 — theme creation: a brand-new user theme derived from a base
+  // ('scratch' / 'default' / any existing theme), installed without touching
+  // the base. The user lands in the editor with a fresh, unique id.
+  if (p === '/api/themes/create' && req.method === 'POST') {
+    const body = await readBody(req)
+    const name = String(body.name || '').trim() || 'My Theme'
+    const baseId = body.baseId === 'scratch' || body.baseId == null ? 'default' : String(body.baseId)
+    const base = themeById(baseId) || themeById('default')
+    if (!base) return sendJson(res, 500, { error: 'no-base', message: 'No base theme available.' })
+    const theme = normalizeTheme({
+      ...base,
+      id: uniqueThemeId(name),
+      name,
+      base: base.id || 'default',
+      description: '',
+    })
+    saveUserTheme(theme)
+    log(`Theme "${theme.name}" created (${theme.id}, base ${theme.base}).`)
+    return sendJson(res, 200, { ok: true, theme: { ...theme, builtin: false } })
+  }
+
+  // VS13 — theme deletion: user themes (created or imported) can be removed;
+  // built-in themes ship with the app and are never deletable. Deleting the
+  // active theme restores the original look.
+  if (p === '/api/themes/delete' && req.method === 'POST') {
+    const body = await readBody(req)
+    const theme = themeById(body.themeId)
+    if (!theme) return sendJson(res, 404, { error: 'unknown-theme', message: 'Unknown theme.' })
+    if (THEMES.some((t) => t.id === theme.id)) {
+      return sendJson(res, 400, { error: 'cannot-delete-builtin', message: 'Built-in themes cannot be deleted.' })
+    }
+    deleteUserTheme(theme.id)
+    if (config.themeId === theme.id) {
+      // The active theme is gone: fall back to the original look.
+      lastPreviewCss = null
+      config.mode = 'theme'
+      config.themeId = null
+      saveConfig(config)
+      restartWatcher()
+    }
+    log(`Theme "${theme.name}" deleted (${theme.id}).`)
+    return sendJson(res, 200, { ok: true })
+  }
+
   // VS1/VS2 — theme reset: restores the base of the theme. A user theme goes
   // back to its base's tokens AND components (persisted); a built-in theme is
   // already its own default, so reset simply returns it unchanged.
@@ -488,6 +532,35 @@ const server = http.createServer(async (req, res) => {
     const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects, motion, extraCss, cssScope })
     if (!builtin) saveUserTheme(reset)
     return sendJson(res, 200, { ok: true, theme: { ...reset, builtin } })
+  }
+
+  // VS11 — theme export: serializes the theme into the portable .freebuff
+  // text; the panel turns it into a file download.
+  if (p === '/api/themes/export' && req.method === 'POST') {
+    const body = await readBody(req)
+    const theme = normalizeTheme(body.theme || {})
+    const content = serializeTheme(theme)
+    const filename = `${slugifyName(theme.name || theme.id)}.freebuff`
+    return sendJson(res, 200, { ok: true, content, filename })
+  }
+
+  // VS11 — theme import: validates the .freebuff file, installs it as a
+  // user theme (never overwriting an existing one). It becomes available in
+  // the list — not auto-activated.
+  if (p === '/api/themes/import' && req.method === 'POST') {
+    const body = await readBody(req)
+    const parsed = parseThemeFile(body.content || '')
+    if (!parsed.ok) return sendJson(res, 400, { error: parsed.code, message: parsed.error })
+    const name = String(parsed.theme.name || body.name || 'Imported theme').trim() || 'Imported theme'
+    const theme = normalizeTheme({
+      ...parsed.theme,
+      id: uniqueThemeId(name),
+      name,
+      base: parsed.theme.base || 'default',
+    })
+    saveUserTheme(theme)
+    log(`Theme "${theme.name}" imported (${theme.id}).`)
+    return sendJson(res, 200, { ok: true, theme: { ...theme, builtin: false } })
   }
 
   if (p === '/api/launch' && req.method === 'POST') {

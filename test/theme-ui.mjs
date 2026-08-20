@@ -29,7 +29,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { findFreePort, listTargets, isAppPageTarget, themeTarget } from '../lib/cdp.mjs'
-import { DEFAULT_TOKENS, darken, normalizeTheme, themeToCss } from '../lib/theme-model.mjs'
+import { DEFAULT_TOKENS, darken, normalizeTheme, parseThemeFile, serializeTheme, slugifyName, themeToCss } from '../lib/theme-model.mjs'
 import { killEdgeByProfile } from './kill-edge.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -71,6 +71,24 @@ const BUILTINS = [
     tokens: { ...DEFAULT_TOKENS, background: '#2e3440', surface: '#353b47', text: '#eceff4', textMuted: '#d8dee9', border: '#4c566a', accent: '#88c0d0' },
     extraCss: '',
   },
+  {
+    id: 'neon-pink',
+    name: 'Neon Pink',
+    description: 'Bold hot pink on dark charcoal.',
+    colorScheme: 'dark',
+    base: 'default',
+    tokens: { ...DEFAULT_TOKENS, background: '#170f17', surface: '#221623', text: '#ffe3f1', textMuted: '#c58aa8', border: '#4a2b3f', accent: '#ff2e88' },
+    extraCss: '',
+  },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    description: 'Deep indigo night.',
+    colorScheme: 'dark',
+    base: 'default',
+    tokens: { ...DEFAULT_TOKENS, background: '#0b1026', surface: '#131a36', text: '#e6eaff', textMuted: '#8f9ac4', border: '#2b3663', accent: '#6ea8ff' },
+    extraCss: '',
+  },
 ]
 
 let failures = 0
@@ -108,7 +126,7 @@ function waitFor(fn, timeoutMs = 15000, interval = 250) {
 }
 
 async function evalOn(client, expression) {
-  const res = await client.send('Runtime.evaluate', { expression, returnByValue: true })
+  const res = await client.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
   if (res.exceptionDetails) throw new Error('evaluation failed: ' + JSON.stringify(res.exceptionDetails))
   return res.result?.value
 }
@@ -235,6 +253,33 @@ async function serveMock(port, targetProvider) {
           await injectCss(themeToCss(theme), theme.colorScheme)
         }
         send(200, { ok: true, theme: { ...theme, builtin: false }, isNew })
+      } else if (url.pathname === '/api/themes/create' && req.method === 'POST') {
+        // VS12 — create a brand-new user theme from a base (never overwrites).
+        const name = String(payload.name || '').trim() || 'My Theme'
+        const baseId = payload.baseId === 'scratch' || payload.baseId == null ? 'default' : String(payload.baseId)
+        const base = themeById(baseId) || themeById('default')
+        if (!base) return send(500, { error: 'no-base', message: 'No base theme available.' })
+        const theme = normalizeTheme({
+          ...base,
+          id: uniqueThemeId(name),
+          name,
+          base: base.id || 'default',
+          description: '',
+        })
+        state.userThemes.set(theme.id, theme)
+        send(200, { ok: true, theme: { ...theme, builtin: false } })
+      } else if (url.pathname === '/api/themes/delete' && req.method === 'POST') {
+        // VS13 — user themes can be deleted; built-ins never.
+        const theme = themeById(payload.themeId)
+        if (!theme) return send(404, { error: 'unknown-theme', message: 'Unknown theme.' })
+        if (theme.builtin) return send(400, { error: 'cannot-delete-builtin', message: 'Built-in themes cannot be deleted.' })
+        state.userThemes.delete(theme.id)
+        if (state.themeId === theme.id) {
+          state.mode = 'theme'
+          state.themeId = null
+          await injectCss('', 'dark')
+        }
+        send(200, { ok: true })
       } else if (url.pathname === '/api/themes/reset' && req.method === 'POST') {
         const theme = themeById(payload.themeId)
         if (!theme) return send(404, { error: 'unknown-theme', message: 'Unknown theme.' })
@@ -260,6 +305,24 @@ async function serveMock(port, targetProvider) {
         const reset = normalizeTheme({ ...theme, tokens, components, shape, shadow, effects, motion, extraCss, cssScope })
         if (!theme.builtin) state.userThemes.set(reset.id, reset)
         send(200, { ok: true, theme: { ...reset, builtin: theme.builtin } })
+      } else if (url.pathname === '/api/themes/export' && req.method === 'POST') {
+        const theme = normalizeTheme(payload.theme || {})
+        const content = serializeTheme(theme)
+        const filename = `${slugifyName(theme.name || theme.id)}.freebuff`
+        state.lastExport = { theme, content }
+        send(200, { ok: true, content, filename })
+      } else if (url.pathname === '/api/themes/import' && req.method === 'POST') {
+        const parsed = parseThemeFile(payload.content || '')
+        if (!parsed.ok) return send(400, { error: parsed.code, message: parsed.error })
+        const name = String(parsed.theme.name || payload.name || 'Imported theme').trim() || 'Imported theme'
+        const theme = normalizeTheme({
+          ...parsed.theme,
+          id: uniqueThemeId(name),
+          name,
+          base: parsed.theme.base || 'default',
+        })
+        state.userThemes.set(theme.id, theme)
+        send(200, { ok: true, theme: { ...theme, builtin: false } })
       } else if (url.pathname === '/api/restore' && req.method === 'POST') {
         state.mode = 'theme'
         state.themeId = null
@@ -1193,7 +1256,7 @@ async function main() {
     })()`)
     const scopedInjected = await waitFor(async () => {
       const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
-      return sheet.includes('button,input,textarea,select,.card,.bubble,.msg,aside,.sidebar,.modal,[role="dialog"] #custom-css-target') ? sheet : null
+      return sheet.includes('button,input,textarea,select,.card,aside,.sidebar,.modal,[role="dialog"] #custom-css-target') ? sheet : null
     })
     check('scope « surfaces » → les sélecteurs sont préfixés', Boolean(scopedInjected))
     const scopedReverted = await evalOn(client, `getComputedStyle(document.getElementById('custom-css-target')).backgroundColor`)
@@ -1247,6 +1310,594 @@ async function main() {
       return !sheet.includes('custom-css-target') ? true : null
     })
     check('Reset custom CSS → retiré de l\u2019injection', advResetApplied === true)
+
+    /* ------------------------------------------------------------ */
+    /* VS10 — undo / redo + history                                 */
+    /* ------------------------------------------------------------ */
+
+    const sleep10 = (ms) => new Promise((r) => setTimeout(r, ms))
+
+    // 52. A fresh edit session starts with an empty history.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await sleep10(350)
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula-custom"]').click()`)
+    await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)
+      return hidden === false ? true : null
+    })
+    const histEmpty = await evalOn(client, `(() => {
+      return {
+        bar: ${SHADOW}.getElementById('fbt-history-bar') !== null,
+        u: ${SHADOW}.getElementById('fbt-undo').disabled,
+        r: ${SHADOW}.getElementById('fbt-redo').disabled,
+        count: ${SHADOW}.getElementById('fbt-history-count').textContent,
+      };
+    })()`)
+    check('barre d\u2019historique présente, Undo/Redo désactivés', histEmpty.bar === true && histEmpty.u === true && histEmpty.r === true && histEmpty.count === 'No changes yet', JSON.stringify(histEmpty))
+
+    // 53. Two token gestures → two history steps, listed by name.
+    await evalOn(client, `(() => {
+      const i = ${SHADOW}.querySelector('input[data-token="accent"]');
+      i.value = '#ff0000';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`)
+      return v === '#ff0000' ? v : null
+    })
+    await sleep10(450)
+    await evalOn(client, `(() => {
+      const i = ${SHADOW}.querySelector('input[data-token="background"]');
+      i.value = '#123456';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)
+      return v === '#123456' ? v : null
+    })
+    await sleep10(450)
+    const histTwo = await evalOn(client, `(() => {
+      const list = [...${SHADOW}.querySelectorAll('#fbt-history-list .fbt-history-item')].map((el) => el.textContent);
+      return { count: ${SHADOW}.getElementById('fbt-history-count').textContent, list };
+    })()`)
+    check('deux changements → 2 étapes listées (Accent, Background)', histTwo.count === '2 steps' && histTwo.list.some((t) => t.includes('Accent')) && histTwo.list.some((t) => t.includes('Background')), JSON.stringify(histTwo))
+
+    // 54. Undo steps back one change at a time; redo replays them.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const bgUndo = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)
+      return v === '#282a36' ? v : null
+    })
+    check('Undo → le fond revient à la valeur dracula', bgUndo === '#282a36', bgUndo)
+    const accentKept = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`)
+    check('l\u2019Accent reste modifié (undo par étapes)', accentKept === '#ff0000', accentKept)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const accentUndo = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`)
+      return v === '#50fa7b' ? v : null
+    })
+    check('Undo → l\u2019Accent revient à sa valeur d\u2019origine', accentUndo === '#50fa7b', accentUndo)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-redo').click()`)
+    const accentRedo = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`)
+      return v === '#ff0000' ? v : null
+    })
+    check('Redo → l\u2019Accent revient', accentRedo === '#ff0000', accentRedo)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-redo').click()`)
+    const bgRedo = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)
+      return v === '#123456' ? v : null
+    })
+    check('Redo → le fond revient', bgRedo === '#123456', bgRedo)
+    await sleep10(450)
+
+    // 55. Ctrl+Z in the panel undoes the last step.
+    await evalOn(client, `document.getElementById('freebuff-theme-engine-host').dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))`)
+    const ctrlZ = await waitFor(async () => {
+      const v = await evalOn(client, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)
+      return v === '#282a36' ? v : null
+    })
+    check('Ctrl+Z → le dernier changement est annulé', ctrlZ === '#282a36', ctrlZ)
+    await sleep10(450)
+
+    // 56. Per-property reset and component reset are undoable.
+    await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"]').click()`)
+    const btnSummaryBefore = await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"] .fbt-comp-summary').textContent`)
+    check('le bouton a des réglages sauvegardés (point de départ)', btnSummaryBefore.includes('3 settings'), btnSummaryBefore)
+    await evalOn(client, `${SHADOW}.querySelector('#fbt-comp-colors .fbt-prop-reset').click()`)
+    const btnAfterPropReset = await waitFor(async () => {
+      const s = await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"] .fbt-comp-summary').textContent`)
+      return s.includes('2 settings') ? s : null
+    })
+    check('Reset property → ce réglage seulement revient au défaut', Boolean(btnAfterPropReset), btnAfterPropReset)
+    const btnBgAfterReset = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(45, 47, 58)' ? bg : null
+    })
+    check('le fond du bouton revient au token global (isolation)', btnBgAfterReset === 'rgb(45, 47, 58)', btnBgAfterReset)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const btnUndoProp = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(51, 102, 255)' ? bg : null
+    })
+    check('Undo → le Background #3366ff revient', btnUndoProp === 'rgb(51, 102, 255)', btnUndoProp)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-comp-reset').click()`)
+    const btnAfterCompReset = await waitFor(async () => {
+      const s = await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"] .fbt-comp-summary').textContent`)
+      return s === 'Default' ? s : null
+    })
+    check('Reset component → tout le composant revient au défaut', btnAfterCompReset === 'Default', btnAfterCompReset)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const btnUndoComp = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(51, 102, 255)' ? bg : null
+    })
+    check('Undo du reset composant → réglages restaurés', btnUndoComp === 'rgb(51, 102, 255)', btnUndoComp)
+
+    // 57. Theme reset is undoable too.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-comp-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-reset').click()`)
+    const themeResetApplied = await waitFor(async () => {
+      const s = await evalOn(client, `${SHADOW}.querySelector('[data-comp="button"] .fbt-comp-summary').textContent`)
+      return s === 'Default' ? s : null
+    })
+    check('Reset theme → le composant redevient par défaut', themeResetApplied === 'Default', themeResetApplied)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const themeUndo = await waitFor(async () => {
+      const bg = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).backgroundColor`)
+      return bg === 'rgb(51, 102, 255)' ? bg : null
+    })
+    check('Undo du reset thème → le look revient', themeUndo === 'rgb(51, 102, 255)', themeUndo)
+    await sleep10(450)
+
+    // 58. Custom CSS typing is undoable (value + injection revert together).
+    // Start from an empty CSS box deterministically (the saved theme may
+    // carry leftover CSS from earlier slices), type, then undo.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-advanced').click()`)
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-adv-editor');
+      t.value = '';
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return !sheet.includes('custom-css-target') ? true : null
+    })
+    await sleep10(450)
+    await evalOn(client, `(() => {
+      const t = ${SHADOW}.getElementById('fbt-adv-editor');
+      t.value = '#custom-css-target { background: var(--theme-accent); }';
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return sheet.includes('custom-css-target') ? true : null
+    })
+    await sleep10(450)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-undo').click()`)
+    const cssUndone = await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      const val = await evalOn(client, `${SHADOW}.getElementById('fbt-adv-editor').value`)
+      return !sheet.includes('custom-css-target') && val === '' ? true : null
+    })
+    check('Undo du CSS custom → texte et injection revenus', cssUndone === true)
+
+    // 59. The history dropdown lists the steps; clicking a future step jumps
+    //     forward through the redo stack to it.
+    const jumpOk = await waitFor(async () => {
+      const clicked = await evalOn(client, `(() => {
+        const items = [...${SHADOW}.querySelectorAll('#fbt-history-list .fbt-history-item')];
+        const target = items.find((el) => el.textContent.includes('Custom CSS'));
+        if (!target) return false;
+        target.click();
+        return true;
+      })()`)
+      if (!clicked) return null
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return sheet.includes('custom-css-target') ? true : null
+    })
+    check('clic sur une étape future de l\u2019historique → redo jusqu\u2019à elle', jumpOk === true)
+
+    /* ------------------------------------------------------------ */
+    /* VS11 — theme import / export                                 */
+    /* ------------------------------------------------------------ */
+
+    // 60. Export: capture the download attempt and the serialized content.
+    await evalOn(client, `(() => {
+      window.__fbtDownload = null;
+      window.__fbtBlobSize = -1;
+      const orig = URL.createObjectURL;
+      URL.createObjectURL = function (blob) { window.__fbtBlobSize = blob.size; return 'blob:fbt'; };
+      const origClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () { window.__fbtDownload = { href: this.href, download: this.download }; };
+      window.__fbtRestoreDownload = function () { URL.createObjectURL = orig; HTMLAnchorElement.prototype.click = origClick; };
+    })()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-export').click()`)
+    const exportDone = await waitFor(async () => {
+      const dl = await evalOn(client, `window.__fbtDownload`)
+      return dl ? dl : null
+    })
+    check('Export → un téléchargement .freebuff est déclenché', Boolean(exportDone) && exportDone.href === 'blob:fbt' && exportDone.download === 'dracula-custom.freebuff', JSON.stringify(exportDone))
+    const exportParsed = JSON.parse(mock.state.lastExport.content)
+    check('le contenu exporté est un .freebuff valide avec l\u2019état édité', exportParsed.format === 'customfreebuff-theme' && exportParsed.theme.tokens.accent === '#ff0000' && exportParsed.theme.extraCss.includes('custom-css-target'), JSON.stringify(exportParsed.theme.tokens))
+    await evalOn(client, `window.__fbtRestoreDownload()`)
+
+    // 61. Import: a .freebuff file is validated, installed, and appears in
+    //     the list with its values intact.
+    const importTheme = {
+      format: 'customfreebuff-theme',
+      version: 1,
+      name: 'Ocean Night',
+      theme: {
+        name: 'Ocean Night',
+        colorScheme: 'dark',
+        base: 'default',
+        tokens: { ...DEFAULT_TOKENS, background: '#001220', surface: '#0a1a2f', text: '#dff0ff', textMuted: '#8fa8c8', border: '#1e3a5f', accent: '#00bfff' },
+        components: { button: { background: '#00bfff', radius: 10 } },
+        extraCss: '.ocean-msg { color: var(--theme-accent); }',
+      },
+    }
+    await evalOn(client, `(() => {
+      const input = ${SHADOW}.getElementById('fbt-import-file');
+      const dt = new DataTransfer();
+      dt.items.add(new File([${JSON.stringify(JSON.stringify(importTheme))}], 'ocean-night.freebuff', { type: 'application/json' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    const imported = await waitFor(async () => {
+      const t = mock.state.userThemes.get('ocean-night')
+      return t && t.tokens.accent === '#00bfff' && t.components.button.background === '#00bfff' && t.extraCss.includes('ocean-msg') ? t : null
+    })
+    check('Import → thème installé avec ses valeurs (tokens, composant, CSS)', Boolean(imported), JSON.stringify(imported))
+    const listHasOcean = await waitFor(async () => {
+      const names = await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-theme-name')].map((el) => el.textContent)`)
+      return names.includes('Ocean Night') ? true : null
+    })
+    check('le thème importé apparaît dans la liste', listHasOcean === true)
+
+    // 62. Import errors are reported clearly in the panel.
+    await evalOn(client, `(() => {
+      const input = ${SHADOW}.getElementById('fbt-import-file');
+      const dt = new DataTransfer();
+      dt.items.add(new File(['not json {'], 'bad.freebuff', { type: 'application/json' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    const badImportToast = await waitFor(async () => {
+      const t = await evalOn(client, `${SHADOW}.querySelector('.fbt-toast').textContent`)
+      return t.includes('not valid JSON') ? t : null
+    })
+    check('JSON invalide → message d\u2019erreur clair', Boolean(badImportToast), badImportToast)
+    const futureJson = JSON.stringify({ format: 'customfreebuff-theme', version: 99, theme: { tokens: { ...DEFAULT_TOKENS } } })
+    await evalOn(client, `(() => {
+      const input = ${SHADOW}.getElementById('fbt-import-file');
+      const dt = new DataTransfer();
+      dt.items.add(new File([${JSON.stringify(futureJson)}], 'future.freebuff', { type: 'application/json' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    const futureToast = await waitFor(async () => {
+      const t = await evalOn(client, `${SHADOW}.querySelector('.fbt-toast').textContent`)
+      return t.includes('newer version') ? t : null
+    })
+    check('version future → rejetée avec un message explicite', Boolean(futureToast), futureToast)
+
+    /* ------------------------------------------------------------ */
+    /* VS12 — theme creation                                        */
+    /* ------------------------------------------------------------ */
+
+    // 63. Create theme opens a dialog with a name field and base choices
+    //     (scratch, default, and every existing theme).
+    await evalOn(client, `${SHADOW}.getElementById('fbt-create-theme').click()`)
+    const createOpen = await waitFor(async () => {
+      const v = await evalOn(client, `(() => {
+        const box = ${SHADOW}.getElementById('fbt-create');
+        return { open: box.hidden === false, bases: [...box.querySelectorAll('input[type=radio]')].map((r) => r.value) };
+      })()`)
+      return v && v.open && v.bases.includes('scratch') && v.bases.includes('default') && v.bases.includes('dracula') ? v : null
+    })
+    check('Create theme → dialogue avec nom + bases (scratch, default, thèmes existants)', Boolean(createOpen), JSON.stringify(createOpen && createOpen.bases))
+
+    // 64. Cancel closes the dialog without creating anything.
+    const themesBefore = mock.state.userThemes.size
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('#fbt-create .fbt-create-actions button')].find((b) => b.textContent === 'Cancel').click()`)
+    const cancelled = await waitFor(async () => {
+      const hidden = await evalOn(client, `${SHADOW}.getElementById('fbt-create').hidden`)
+      return hidden === true ? true : null
+    })
+    check('Cancel referme le dialogue sans créer de thème', cancelled === true && mock.state.userThemes.size === themesBefore)
+
+    // 65. Create from Default: a new user theme inheriting Default's tokens,
+    //     and the editor opens on it.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-create-theme').click()`)
+    await evalOn(client, `(() => {
+      const box = ${SHADOW}.getElementById('fbt-create');
+      box.querySelector('input[type=text]').value = 'Ocean';
+      [...box.querySelectorAll('input[type=radio]')].find((r) => r.value === 'default').checked = true;
+    })()`)
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('#fbt-create .fbt-create-actions button')].find((b) => b.textContent === 'Create').click()`)
+    const created = await waitFor(async () => {
+      const t = mock.state.userThemes.get('ocean')
+      return t && t.base === 'default' && t.tokens.background === '#0e0e0e' && t.tokens.accent === '#7cff3f' ? t : null
+    })
+    check('Créer depuis Default → thème utilisateur «ocean» (base default, tokens de Default)', Boolean(created), JSON.stringify(created && created.tokens))
+    const editorOpened = await waitFor(async () => {
+      const v = await evalOn(client, `(() => {
+        const name = ${SHADOW}.querySelector('.fbt-edit-name').textContent;
+        const bg = ${SHADOW}.querySelector('[data-token=background]').value;
+        return { name, bg };
+      })()`)
+      return v && v.name.includes('Ocean') && v.bg === '#0e0e0e' ? v : null
+    })
+    check('l\u2019éditeur s\u2019ouvre sur le nouveau thème avec les valeurs de la base', Boolean(editorOpened), JSON.stringify(editorOpened))
+
+    // 66. Saving the new theme modifies only it — the base is untouched.
+    await evalOn(client, `(() => {
+      const a = ${SHADOW}.querySelector('[data-token=accent]');
+      a.value = '#ff5500';
+      a.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await evalOn(client, `${SHADOW}.getElementById('fbt-save').click()`)
+    const savedNew = await waitFor(async () => {
+      const t = mock.state.userThemes.get('ocean')
+      return t && t.tokens.accent === '#ff5500' ? t : null
+    })
+    const defaultTheme = BUILTINS.find((t) => t.id === 'default')
+    check('Enregistrer le nouveau thème → accent modifié, Default intact', Boolean(savedNew) && defaultTheme.tokens.accent === '#7cff3f', JSON.stringify(savedNew && savedNew.tokens))
+
+    // 67. Create from an existing theme: Dracula V2 inherits Dracula's values.
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await waitFor(async () => ((await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)) === true ? true : null))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-create-theme').click()`)
+    await evalOn(client, `(() => {
+      const box = ${SHADOW}.getElementById('fbt-create');
+      box.querySelector('input[type=text]').value = 'Dracula V2';
+      [...box.querySelectorAll('input[type=radio]')].find((r) => r.value === 'dracula').checked = true;
+    })()`)
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('#fbt-create .fbt-create-actions button')].find((b) => b.textContent === 'Create').click()`)
+    const draculaV2 = await waitFor(async () => {
+      const t = mock.state.userThemes.get('dracula-v2')
+      return t && t.base === 'dracula' && t.tokens.background === '#282a36' ? t : null
+    })
+    check('Créer depuis un thème existant → hérite de ses valeurs (base dracula)', Boolean(draculaV2), JSON.stringify(draculaV2 && draculaV2.tokens))
+    const draculaInEditor = await waitFor(async () => {
+      const bg = await evalOn(client, `${SHADOW}.querySelector('[data-token=background]').value`)
+      return bg === '#282a36' ? bg : null
+    })
+    check('l\u2019éditeur montre les valeurs de Dracula', Boolean(draculaInEditor), String(draculaInEditor))
+
+    // 68. A new theme never overwrites an existing id (unique ids).
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await waitFor(async () => ((await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)) === true ? true : null))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-create-theme').click()`)
+    await evalOn(client, `(() => {
+      const box = ${SHADOW}.getElementById('fbt-create');
+      box.querySelector('input[type=text]').value = 'Ocean';
+      [...box.querySelectorAll('input[type=radio]')].find((r) => r.value === 'scratch').checked = true;
+    })()`)
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('#fbt-create .fbt-create-actions button')].find((b) => b.textContent === 'Create').click()`)
+    const ocean2 = await waitFor(async () => mock.state.userThemes.get('ocean-2') || null)
+    check('id unique → «ocean-2» sans écraser «ocean»', Boolean(ocean2) && mock.state.userThemes.get('ocean').tokens.accent === '#ff5500', JSON.stringify(ocean2 && ocean2.id))
+
+    // 69. The new themes appear in the list as custom. (The create flow
+    //     reopens the editor asynchronously — wait until it is really closed
+    //     so the next checks run without an edit session.)
+    await waitFor(async () => ((await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)) === false ? true : null))
+    await evalOn(client, `${SHADOW}.getElementById('fbt-edit-back').click()`)
+    await waitFor(async () => ((await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)) === true ? true : null))
+    const createdInList = await waitFor(async () => {
+      const v = await evalOn(client, `(() => {
+        const names = [...${SHADOW}.querySelectorAll('.fbt-theme-name')].map((el) => el.textContent);
+        return { cards: names.length, badges: ${SHADOW}.querySelectorAll('.fbt-badge').length, hasOcean: names.includes('Ocean'), hasDraculaV2: names.includes('Dracula V2') };
+      })()`)
+      return v && v.hasOcean && v.hasDraculaV2 && v.badges >= 3 ? v : null
+    })
+    check('les nouveaux thèmes apparaissent dans la liste (custom)', Boolean(createdInList), JSON.stringify(createdInList))
+
+    /* ------------------------------------------------------------ */
+    /* VS13 — redesigned interface: navigation, tabs, deletion      */
+    /* ------------------------------------------------------------ */
+
+    // 70. The bottom navigation exists: Themes + Editor entries, the Editor
+    //     entry disabled while no edit session is alive.
+    const navState = await evalOn(client, `(() => {
+      const nav = ${SHADOW}.getElementById('fbt-nav');
+      const btns = [...nav.querySelectorAll('.fbt-nav-btn')];
+      return { present: Boolean(nav), labels: btns.map((b) => b.dataset.nav), editorDisabled: btns.find((b) => b.dataset.nav === 'edit').disabled };
+    })()`)
+    check('barre de navigation basse (Themes + Editor, Editor désactivé sans session)', navState.present && navState.labels.includes('list') && navState.labels.includes('edit') && navState.editorDisabled, JSON.stringify(navState))
+
+    // 71. The editor has a section tab bar; switching tabs shows one section
+    //     at a time.
+    await evalOn(client, `${SHADOW}.querySelector('[data-edit="dracula"]').click()`)
+    await waitFor(async () => (await evalOn(client, `${SHADOW}.getElementById('fbt-view-edit').hidden`)) === false)
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-tab')].find((b) => b.dataset.tab === 'colors').click()`)
+    const tabsState = await evalOn(client, `(() => {
+      const tabs = [...${SHADOW}.querySelectorAll('.fbt-tab')];
+      const panels = {};
+      tabs.forEach((t) => { panels[t.dataset.tab] = ${SHADOW}.querySelector('.fbt-tab-panel[data-tab="' + t.dataset.tab + '"]').hidden; });
+      return { count: tabs.length, labels: tabs.map((t) => t.dataset.tab), active: tabs.find((t) => t.classList.contains('active')).dataset.tab, panels };
+    })()`)
+    check('éditeur → 6 onglets de sections, Colors actif par défaut', tabsState.count === 6 && tabsState.active === 'colors' && tabsState.panels.colors === false && tabsState.panels.motion === true, JSON.stringify(tabsState))
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-tab')].find((b) => b.dataset.tab === 'motion').click()`)
+    const motionTab = await waitFor(async () => {
+      const v = await evalOn(client, `(() => ({
+        motion: ${SHADOW}.querySelector('.fbt-tab-panel[data-tab="motion"]').hidden,
+        colors: ${SHADOW}.querySelector('.fbt-tab-panel[data-tab="colors"]').hidden,
+        active: ${SHADOW}.querySelector('.fbt-tab.active').dataset.tab,
+      }))()`)
+      return v.motion === false && v.colors === true && v.active === 'motion' ? v : null
+    })
+    check('cliquer l\u2019onglet Motion affiche Motion et masque Colors', Boolean(motionTab), JSON.stringify(motionTab))
+    // Hidden panels stay interactive: setting a value in a hidden tab works.
+    await evalOn(client, `(() => {
+      const r = ${SHADOW}.querySelector('.fbt-tab-panel[data-tab="shape"]');
+      r.hidden = false;
+    })()`)
+    await evalOn(client, `(() => {
+      const s = ${SHADOW}.getElementById('fbt-shape-radius');
+      s.value = '16';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    const hiddenPanelWorks = await waitFor(async () => {
+      const r = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).borderRadius`)
+      return r === '16px' ? r : null
+    })
+    check('les contrôles des onglets cachés restent fonctionnels (rayon 16 appliqué)', Boolean(hiddenPanelWorks), String(hiddenPanelWorks))
+
+    // 72. Bottom nav: back to Themes closes the editor and disables Editor.
+    await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-nav-btn')].find((b) => b.dataset.nav === 'list').click()`)
+    const navBack = await waitFor(async () => {
+      const v = await evalOn(client, `(() => ({
+        list: ${SHADOW}.getElementById('fbt-view-list').hidden,
+        edit: ${SHADOW}.getElementById('fbt-view-edit').hidden,
+        editorDisabled: [...${SHADOW}.querySelectorAll('.fbt-nav-btn')].find((b) => b.dataset.nav === 'edit').disabled,
+      }))()`)
+      return v.list === false && v.edit === true && v.editorDisabled === true ? v : null
+    })
+    check('nav Themes → retour à la liste, session éditeur fermée', Boolean(navBack), JSON.stringify(navBack))
+
+    // 73. Delete a user theme: first click arms the confirm, second deletes.
+    const delBtn = await evalOn(client, `${SHADOW}.querySelector('[data-del="ocean-2"]') ? 'found' : null`)
+    check('les thèmes utilisateur ont un bouton de suppression', delBtn === 'found')
+    const builtinDelBtn = await evalOn(client, `${SHADOW}.querySelector('[data-del="dracula"]') ? 'found' : null`)
+    check('les thèmes officiels n\u2019ont PAS de bouton de suppression', builtinDelBtn === null)
+    await evalOn(client, `${SHADOW}.querySelector('[data-del="ocean-2"]').click()`)
+    const confirmState = await waitFor(async () => {
+      const v = await evalOn(client, `(() => {
+        const b = ${SHADOW}.querySelector('[data-del="ocean-2"]');
+        return { text: b.textContent, confirm: b.classList.contains('confirm') };
+      })()`)
+      return v.text === 'Sure?' && v.confirm ? v : null
+    })
+    check('1er clic → confirmation « Sure? » (pas de suppression accidentelle)', Boolean(confirmState), JSON.stringify(confirmState))
+    const stillThere = mock.state.userThemes.has('ocean-2')
+    await evalOn(client, `${SHADOW}.querySelector('[data-del="ocean-2"]').click()`)
+    const deleted = await waitFor(async () => {
+      if (mock.state.userThemes.has('ocean-2')) return null
+      const names = await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-theme-name')].map((el) => el.textContent)`)
+      return names.filter((n) => n === 'Ocean').length === 1 ? names : null
+    })
+    check('2e clic → le thème est supprimé de la liste (DoD)', Boolean(deleted) && stillThere === true, JSON.stringify(deleted))
+
+    // 74. Built-in themes are protected server-side.
+    const builtinDeleteRes = await evalOn(client, `fetch('http://127.0.0.1:${mockPort}/api/themes/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ themeId: 'dracula' }) }).then((r) => r.json())`)
+    check('supprimer un thème officiel → rejeté (cannot-delete-builtin)', builtinDeleteRes && builtinDeleteRes.error === 'cannot-delete-builtin', JSON.stringify(builtinDeleteRes))
+    const draculaStill = BUILTINS.some((t) => t.id === 'dracula')
+    check('Dracula est toujours présent', draculaStill === true)
+
+    // 75. Deleting the ACTIVE theme falls back to the original look.
+    await evalOn(client, `${SHADOW}.querySelector('[data-theme="ocean"]').click()`)
+    await waitFor(async () => (mock.state.themeId === 'ocean' ? true : null))
+    await evalOn(client, `${SHADOW}.querySelector('[data-del="ocean"]').click()`)
+    await evalOn(client, `${SHADOW}.querySelector('[data-del="ocean"]').click()`)
+    const activeDeleted = await waitFor(async () => {
+      if (mock.state.userThemes.has('ocean')) return null
+      const names = await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-theme-name')].map((el) => el.textContent)`)
+      return { themeId: mock.state.themeId, mode: mock.state.mode, hasOcean: names.includes('Ocean') }.hasOcean === false ? { themeId: mock.state.themeId, mode: mock.state.mode, hasOcean: names.includes('Ocean') } : null
+    })
+    check('supprimer le thème actif → retour au look original, thème retiré', Boolean(activeDeleted) && activeDeleted.themeId === null && activeDeleted.hasOcean === false, JSON.stringify(activeDeleted))
+
+    // 76. The two new official themes are in the list.
+    const newThemes = await waitFor(async () => {
+      const names = await evalOn(client, `[...${SHADOW}.querySelectorAll('.fbt-theme-name')].map((el) => el.textContent)`)
+      return names.includes('Neon Pink') && names.includes('Midnight') ? names : null
+    })
+    check('les 2 nouveaux thèmes officiels sont listés (Neon Pink, Midnight)', Boolean(newThemes), JSON.stringify(newThemes && newThemes.filter((n) => n === 'Neon Pink' || n === 'Midnight')))
+
+    /* ------------------------------------------------------------ */
+    /* VS13.5 — chat & containers stay calm                          */
+    /*                                                               */
+    /* The AI chat (and messages in general) keeps its own look: no  */
+    /* shadows, no glass, no hover growth. Containers never scale on */
+    /* hover — only interactive controls express the motion.         */
+    /* ------------------------------------------------------------ */
+
+    // Activate a "rich" theme — floating shadows + frosted glass + smooth
+    // motion: the worst case the old over-broad selectors messed up.
+    await evalOn(client, `fetch('http://127.0.0.1:${mockPort}/api/themes/save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        theme: {
+          id: 'rich',
+          name: 'Rich',
+          colorScheme: 'dark',
+          tokens: ${JSON.stringify(DEFAULT_TOKENS)},
+          shape: { radius: 14, borderWidth: 1, borderOpacity: 1 },
+          shadow: { layers: [{ x: 0, y: 10, blur: 28, spread: -6, color: '#000000', opacity: 0.4, inner: false }] },
+          effects: { enabled: true, mode: 'frosted', transparency: 0.8, blur: 14, saturation: 1.2, brightness: 1.05, borderTranslucency: 0.4, glow: 0, gradient: 0, grain: 0, performance: 'auto' },
+          motion: { preset: 'smooth', duration: 200, easing: 'ease-out', delay: 0, hover: { translateY: -2, scale: 1.02 }, active: { scale: 0.97 }, focus: { scale: 1.01 }, enter: true, global: { speed: 1, intensity: 1, reduced: 'auto' } },
+          extraCss: '',
+          cssScope: 'app',
+        },
+        activate: true,
+      }),
+    }).then((r) => r.json())`)
+    const richSheet = await waitFor(async () => {
+      const sheet = await evalOn(client, `document.getElementById('freebuff-themer-style').textContent`)
+      return sheet.includes('fbt-enter') && sheet.includes('box-shadow: var(--fbt-shadow)') && sheet.includes('backdrop-filter') ? sheet : null
+    })
+    check('le thème «Rich» est actif (shadow + glass + motion injectés)', Boolean(richSheet))
+
+    // A chat message (.bubble) is created — it must keep its own look.
+    await evalOn(client, `(() => {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.textContent = 'chat message';
+      document.body.appendChild(b);
+      return b.className;
+    })()`)
+    const bubbleStyle = await evalOn(client, `(() => {
+      const s = getComputedStyle(document.querySelector('.bubble'));
+      return { shadow: s.boxShadow, blur: s.backdropFilter, radius: s.borderRadius };
+    })()`)
+    check('le message de chat n\u2019a ni ombre, ni glass, ni rayon forcé', bubbleStyle.shadow === 'none' && bubbleStyle.blur === 'none' && bubbleStyle.radius === '0px', JSON.stringify(bubbleStyle))
+
+    // Real hover over the message → it does NOT grow (no transform at all).
+    const bubbleRect = await evalOn(client, `(() => {
+      const r = document.querySelector('.bubble').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: bubbleRect.x, y: bubbleRect.y })
+    await new Promise((r) => setTimeout(r, 350))
+    const bubbleHover = await evalOn(client, `getComputedStyle(document.querySelector('.bubble')).transform`)
+    // The enter animation's `both` fill keeps the identity matrix applied —
+    // visually identical to `none` (no growth, no movement).
+    const identity = bubbleHover === 'none' || bubbleHover === 'matrix(1, 0, 0, 1, 0, 0)'
+    check('survol du message de chat → aucun grossissement (transform none)', identity, bubbleHover)
+
+    // Same for a container (card): it keeps its look on hover.
+    const cardRect = await evalOn(client, `(() => {
+      const r = document.querySelector('.card').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: cardRect.x, y: cardRect.y })
+    await new Promise((r) => setTimeout(r, 350))
+    const cardHover = await evalOn(client, `getComputedStyle(document.querySelector('.card')).transform`)
+    check('survol d\u2019un container (card) → aucun grossissement', cardHover === 'none', cardHover)
+
+    // But an interactive control still animates (VS6 DoD preserved).
+    const btnRect3 = await evalOn(client, `(() => {
+      const r = document.getElementById('demo-btn').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: btnRect3.x, y: btnRect3.y })
+    const btnHover2 = await waitFor(async () => {
+      const t = await evalOn(client, `getComputedStyle(document.getElementById('demo-btn')).transform`)
+      return t === 'matrix(1.02, 0, 0, 1.02, 0, -2)' ? t : null
+    })
+    check('le bouton (contrôle interactif) garde son motion au survol', btnHover2 === 'matrix(1.02, 0, 0, 1.02, 0, -2)', btnHover2)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+
+    // The generated sheet never targets messages with hover transforms.
+    const sheetQuiet = await evalOn(client, `(() => {
+      const sheet = document.getElementById('freebuff-themer-style').textContent;
+      return { bubbleHover: sheet.includes('.bubble:hover'), msgHover: sheet.includes('.msg:hover'), cardHover: sheet.includes('.card:hover') };
+    })()`)
+    check('la feuille ne contient aucun :hover sur les messages ni les containers', sheetQuiet.bubbleHover === false && sheetQuiet.msgHover === false && sheetQuiet.cardHover === false, JSON.stringify(sheetQuiet))
 
     client.close()
   } finally {

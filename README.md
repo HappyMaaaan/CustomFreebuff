@@ -125,7 +125,7 @@ All theme management happens **inside Freebuff** (the 🎨 Themes button), not
 in the launcher. The launcher remembers your choice, so the next time you
 patch Freebuff, the same theme comes back automatically.
 
-### Theme Engine inside Freebuff (VS0 → VS9)
+### Theme Engine inside Freebuff (VS0 → VS13)
 
 Once Freebuff is patched from the launcher, a small **🎨 Themes** button appears
 in the bottom-right corner of the app window — the first pieces of the future
@@ -133,6 +133,17 @@ Theme Engine, usable directly inside Freebuff. Click it to open the in-app
 theme panel:
 
 - pick a theme → it is applied instantly and remembered locally,
+- the panel is a clean, navigable interface: a **bottom navigation** moves
+  between *Themes* and *Editor*, and the editor has a **tab bar** (Colors /
+  Components / Shape / Effects / Motion / Advanced) so every section has its
+  own space — hidden tabs stay fully functional,
+- **user themes can be deleted**: themes you created or imported get a delete
+  button (first click asks *“Sure?”*), while official themes are protected;
+  deleting the active theme returns Freebuff to its original look,
+- **+ Create theme** (VS12): name a theme and pick its **base** — from
+  **scratch**, from **Default**, or from **any existing theme** (built-in or
+  your own) — and the editor opens on it right away. Each new theme gets its
+  own unique id, so nothing is ever overwritten,
 - **Edit** opens the **Theme Editor** (VS1): the six design tokens
   (Background, Surface, Text, Muted Text, Border, Accent) as color pickers,
   with **live preview** — change Accent and every place driven by `--brand`
@@ -173,7 +184,24 @@ theme panel:
   (`var(--theme-surface)`, `var(--theme-accent)`, `var(--theme-radius)`, …),
   rules are **validated** with line/column error reporting, and a **scope**
   option restricts them to the themed surfaces (or the whole app).
-  **Reset custom CSS** clears everything,
+  **Reset custom CSS** clears everything. The chat stays protected: its
+  messages (`.bubble`/`.msg`) are not themeable surfaces — no shadows,
+  glass or hover growth on the conversation — and only interactive
+  controls (buttons, inputs, selects) animate on hover, never the
+  containers,
+- **Undo / Redo + History** (VS10): every change — tokens, components,
+  states, shapes, effects, motion, custom CSS, the element inspector — is
+  recorded as a step, with **Undo/Redo buttons**, **Ctrl+Z / Ctrl+Shift+Z
+  / Ctrl+Y shortcuts** and a **history list** that jumps back or forward
+  to any step by name. One gesture = one step; **all resets** (the new
+  per-property ↺ buttons, component, state, theme, custom CSS) are
+  undoable. Saving is the new baseline,
+- **Import / Export** (VS11): **Export** downloads the theme being edited
+  as a portable **`.freebuff`** file (tokens, components, states, shape,
+  effects, motion and custom CSS in one JSON document); **Import theme**
+  in the list validates the file — JSON syntax, format, version and
+  compatibility — then installs it as a new theme, never overwriting
+  anything, with explicit error messages for invalid or newer files,
 - **Save** saves the theme (editing a built-in theme never overwrites
   it: it creates a derived *custom* theme and activates it),
 - **Reset** restores the base theme's tokens **and** components,
@@ -270,7 +298,7 @@ source: see [TESTING.md](TESTING.md).** It walks through the in-app Theme
 Engine, the token editor and its live preview, persistence, disconnection,
 and how to rebuild the executable.
 
-The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, automatic theming of newly opened windows, the in-app Theme Engine panel (activate → visual change → restore, edit a token → several coherent places change → save → reset, customize a Button → it changes while Input/Card are untouched → save → reset, real hover restyles only the hovered button, Flat→Floating transforms the whole interface, Frosted makes several components glassy at once, a Motion preset really changes the animated behavior on hover and on message entry, a single Speed/Intensity slider accelerates or freezes the whole app, reduced-motion is injected and removable, Edit Element picks a real button → highlights it → maps it to its component → edits preview live on it only, and Custom CSS typed in the editor is injected live with the theme's variables (and validated/scoped/reset)), disconnection detection, and the token/component/shape/effects/motion/custom-CSS→CSS generator (unit).
+The tests launch a headless Chromium against a page that mimics the Freebuff renderer, and verify: CSS injection, persistence across reload, the native `setTheme` call, automatic theming of newly opened windows, the in-app Theme Engine panel (activate → visual change → restore, edit a token → several coherent places change → save → reset, customize a Button → it changes while Input/Card are untouched → save → reset, real hover restyles only the hovered button, Flat→Floating transforms the whole interface, Frosted makes several components glassy at once, a Motion preset really changes the animated behavior on hover and on message entry, a single Speed/Intensity slider accelerates or freezes the whole app, reduced-motion is injected and removable, Edit Element picks a real button → highlights it → maps it to its component → edits preview live on it only, and Custom CSS typed in the editor is injected live with the theme's variables (and validated/scoped/reset), undo/redo restores previous states step by step through every editor (tokens, components, resets, custom CSS) and the history list jumps back and forth, export produces a portable .freebuff file and import validates and installs it), disconnection detection, and the token/component/shape/effects/motion/custom-CSS→CSS generator (unit).
 
 ## Project layout
 
@@ -279,9 +307,9 @@ start.bat / start.sh   # launchers (require Node.js)
 themer.mjs             # local server + API + orchestration
 lib/assets.mjs         # asset loading (embedded in the exe / disk in dev)
 lib/cdp.mjs            # minimal CDP client + CSS injection
-lib/theme-model.mjs    # theme model: tokens + components + shape + effects + motion + custom CSS → generated CSS (VS1→VS9)
+lib/theme-model.mjs    # theme model: tokens + components + shape + effects + motion + custom CSS + .freebuff export/import → generated CSS (VS1→VS13)
 lib/theme-store.mjs    # user-theme persistence (VS1)
-lib/themeui.mjs        # in-app Theme Engine panel + editor injected into Freebuff
+lib/themeui.mjs        # in-app Theme Engine panel + editor injected into Freebuff (VS0→VS13, incl. undo/redo history)
 lib/launcher.mjs       # Freebuff discovery and launch
 public/index.html      # the small launcher window (single page, no build step)
 themes/*.json          # built-in themes (tokens)

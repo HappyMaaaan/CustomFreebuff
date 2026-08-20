@@ -1,19 +1,19 @@
 {
-  "id": "paper-light",
-  "name": "Paper Light",
-  "description": "A light, paper-like theme for daylight work — soft floating depth.",
-  "colorScheme": "light",
+  "id": "midnight",
+  "name": "Midnight",
+  "description": "Deep indigo night — floating surfaces, frosted glass and a calm, smooth feel.",
+  "colorScheme": "dark",
   "base": "default",
   "tokens": {
-    "background": "#fafaf9",
-    "surface": "#ffffff",
-    "text": "#292524",
-    "textMuted": "#78716c",
-    "border": "#d6d3d1",
-    "accent": "#4d7c0f"
+    "background": "#0b1026",
+    "surface": "#131a36",
+    "text": "#e6eaff",
+    "textMuted": "#8f9ac4",
+    "border": "#2b3663",
+    "accent": "#6ea8ff"
   },
   "shape": {
-    "radius": 10,
+    "radius": 12,
     "borderWidth": 1,
     "borderOpacity": 0.9
   },
@@ -22,38 +22,38 @@
       {
         "x": 0,
         "y": 2,
-        "blur": 8,
+        "blur": 10,
         "spread": 0,
         "color": "#000000",
-        "opacity": 0.12,
+        "opacity": 0.2,
         "inner": false
       }
     ]
   },
   "effects": {
     "enabled": true,
-    "mode": "subtle",
-    "transparency": 0.97,
-    "blur": 4,
-    "saturation": 1.02,
+    "mode": "frosted",
+    "transparency": 0.86,
+    "blur": 8,
+    "saturation": 1.1,
     "brightness": 1,
-    "borderTranslucency": 0.8,
-    "glow": 0,
-    "gradient": 0,
+    "borderTranslucency": 0.55,
+    "glow": 0.08,
+    "gradient": 0.06,
     "grain": 0,
     "performance": "auto"
   },
   "motion": {
     "preset": "smooth",
-    "duration": 200,
+    "duration": 220,
     "easing": "ease-out",
     "delay": 0,
     "hover": {
       "translateY": -2,
-      "scale": 1.01
+      "scale": 1.02
     },
     "active": {
-      "scale": 0.98
+      "scale": 0.97
     },
     "focus": {
       "scale": 1.01
